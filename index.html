@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="AI chatbot dashboard prototype for WhatsApp Business operations."
+    />
+    <title>WhatsApp Business AI</title>
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Main navigation">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <span></span>
+          </div>
+          <div>
+            <strong>WA Business AI</strong>
+            <small>Commerce Copilot</small>
+          </div>
+        </div>
+
+        <nav class="nav-list" aria-label="Product modules">
+          <button class="nav-item active" type="button" aria-label="Inbox">
+            <span class="nav-icon inbox-icon" aria-hidden="true"></span>
+            <span>Inbox</span>
+          </button>
+          <button class="nav-item" type="button" aria-label="Automations">
+            <span class="nav-icon automation-icon" aria-hidden="true"></span>
+            <span>Automations</span>
+          </button>
+          <button class="nav-item" type="button" aria-label="Warehouse">
+            <span class="nav-icon warehouse-icon" aria-hidden="true"></span>
+            <span>Warehouse</span>
+          </button>
+          <button class="nav-item" type="button" aria-label="Logistics">
+            <span class="nav-icon logistics-icon" aria-hidden="true"></span>
+            <span>Logistics</span>
+          </button>
+          <button class="nav-item" type="button" aria-label="Analytics">
+            <span class="nav-icon analytics-icon" aria-hidden="true"></span>
+            <span>Analytics</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <small>Today</small>
+          <strong>92% auto-resolved</strong>
+          <span>18 orders captured</span>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">WhatsApp Business Command Center</p>
+            <h1>AI chatbot operations</h1>
+          </div>
+          <div class="topbar-actions">
+            <button class="icon-button" type="button" aria-label="Search conversations" title="Search conversations">
+              <span class="search-icon" aria-hidden="true"></span>
+            </button>
+            <button class="icon-button" type="button" aria-label="Notifications" title="Notifications">
+              <span class="bell-icon" aria-hidden="true"></span>
+            </button>
+            <button class="primary-action" type="button">
+              <span class="send-icon" aria-hidden="true"></span>
+              Connect WhatsApp
+            </button>
+          </div>
+        </header>
+
+        <section class="status-strip" aria-label="Operational metrics">
+          <article>
+            <span>Live chats</span>
+            <strong>128</strong>
+            <small>24 need review</small>
+          </article>
+          <article>
+            <span>Orders detected</span>
+            <strong>42</strong>
+            <small>11 pending stock check</small>
+          </article>
+          <article>
+            <span>Delivery questions</span>
+            <strong>31</strong>
+            <small>Avg response 18 sec</small>
+          </article>
+          <article>
+            <span>Revenue influenced</span>
+            <strong>$18.4k</strong>
+            <small>Projected today</small>
+          </article>
+        </section>
+
+        <section class="main-grid">
+          <section class="panel conversation-list" aria-label="Conversations">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Queue</p>
+                <h2>Customer conversations</h2>
+              </div>
+              <select id="queueFilter" aria-label="Filter queue">
+                <option value="all">All</option>
+                <option value="urgent">Urgent</option>
+                <option value="order">Orders</option>
+                <option value="delivery">Delivery</option>
+              </select>
+            </div>
+            <div id="conversationList" class="conversation-stack"></div>
+          </section>
+
+          <section class="panel chat-panel" aria-label="Selected chat">
+            <div class="chat-header">
+              <div>
+                <p class="eyebrow" id="chatStatus">Priority customer</p>
+                <h2 id="chatName">Loading</h2>
+              </div>
+              <div class="chat-meta">
+                <span id="chatIntent">Intent</span>
+                <strong id="chatConfidence">0%</strong>
+              </div>
+            </div>
+
+            <div id="messageThread" class="message-thread" aria-live="polite"></div>
+
+            <div class="composer">
+              <div class="composer-toolbar" aria-label="AI reply settings">
+                <div class="segmented-control" role="group" aria-label="Reply tone">
+                  <button class="tone-option active" type="button" data-tone="helpful">Helpful</button>
+                  <button class="tone-option" type="button" data-tone="sales">Sales</button>
+                  <button class="tone-option" type="button" data-tone="ops">Ops</button>
+                </div>
+                <label class="toggle">
+                  <input id="stockCheckToggle" type="checkbox" checked />
+                  <span>Stock check</span>
+                </label>
+              </div>
+              <textarea id="replyDraft" rows="4" aria-label="AI generated reply"></textarea>
+              <div class="composer-actions">
+                <button class="secondary-action" id="rewriteButton" type="button">
+                  <span class="spark-icon" aria-hidden="true"></span>
+                  Rewrite
+                </button>
+                <button class="primary-action" id="sendButton" type="button">
+                  <span class="send-icon" aria-hidden="true"></span>
+                  Send reply
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <aside class="insight-column" aria-label="Conversation insights">
+            <section class="panel insight-panel">
+              <div class="panel-header compact">
+                <div>
+                  <p class="eyebrow">AI read</p>
+                  <h2>Action summary</h2>
+                </div>
+              </div>
+              <dl class="detail-list">
+                <div>
+                  <dt>Intent</dt>
+                  <dd id="detailIntent">-</dd>
+                </div>
+                <div>
+                  <dt>Next action</dt>
+                  <dd id="detailAction">-</dd>
+                </div>
+                <div>
+                  <dt>Order value</dt>
+                  <dd id="detailValue">-</dd>
+                </div>
+                <div>
+                  <dt>Risk</dt>
+                  <dd id="detailRisk">-</dd>
+                </div>
+              </dl>
+            </section>
+
+            <section class="panel automations-panel">
+              <div class="panel-header compact">
+                <div>
+                  <p class="eyebrow">Controls</p>
+                  <h2>Automation rules</h2>
+                </div>
+              </div>
+              <label class="rule-row">
+                <input type="checkbox" checked />
+                <span>Auto-tag buying intent</span>
+              </label>
+              <label class="rule-row">
+                <input type="checkbox" checked />
+                <span>Escalate refund requests</span>
+              </label>
+              <label class="rule-row">
+                <input type="checkbox" />
+                <span>Create shipment task</span>
+              </label>
+              <label class="rule-row">
+                <input type="checkbox" checked />
+                <span>Update CRM timeline</span>
+              </label>
+            </section>
+
+            <section class="panel roadmap-panel">
+              <div class="panel-header compact">
+                <div>
+                  <p class="eyebrow">Expansion</p>
+                  <h2>Future modules</h2>
+                </div>
+              </div>
+              <div class="module-list">
+                <button class="module-row" type="button">
+                  <span class="module-symbol warehouse-icon" aria-hidden="true"></span>
+                  <span>
+                    <strong>Warehouse</strong>
+                    <small>Stock, picking, replenishment</small>
+                  </span>
+                </button>
+                <button class="module-row" type="button">
+                  <span class="module-symbol logistics-icon" aria-hidden="true"></span>
+                  <span>
+                    <strong>Logistics</strong>
+                    <small>Delivery status and routing</small>
+                  </span>
+                </button>
+                <button class="module-row" type="button">
+                  <span class="module-symbol analytics-icon" aria-hidden="true"></span>
+                  <span>
+                    <strong>Analysis</strong>
+                    <small>Sales, demand, service quality</small>
+                  </span>
+                </button>
+              </div>
+            </section>
+          </aside>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

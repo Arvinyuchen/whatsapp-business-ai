@@ -1,0 +1,10 @@
+{
+  "name": "whatsapp-business-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI assistant dashboard prototype for WhatsApp Business with future warehouse, logistics, and business analysis modules.",
+  "type": "module",
+  "scripts": {
+    "dev": "python3 -m http.server 5179 --bind 127.0.0.1"
+  }
+}
