@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 
-import { createMemoryEventStore } from './event-store.js';
+import { createMemoryWorkspaceStore } from './workspace-store.js';
 import { createIdempotencyStore, isOperatorAuthorized } from './operator-security.js';
 
 const securityHeaders = {
@@ -70,7 +70,7 @@ export function createApp({
   staticRoot,
   adminToken,
   publicWebhookUrl,
-  eventStore = createMemoryEventStore(),
+  workspaceStore = createMemoryWorkspaceStore(),
   idempotencyStore = createIdempotencyStore()
 }) {
   return {
@@ -116,7 +116,7 @@ export function createApp({
           return json({ error: 'Invalid webhook signature' }, { status: 401 });
         }
 
-        const stored = await eventStore.append(result.events);
+        const stored = await workspaceStore.applyEvents(result.events);
         return json({
           received: true,
           eventCount: stored.added,
@@ -149,7 +149,44 @@ export function createApp({
           return json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        return json({ events: await eventStore.list() });
+        const workspace = await workspaceStore.getWorkspace();
+        return json({ events: workspace.events });
+      }
+
+      if (request.method === 'GET' && url.pathname === '/api/workspace') {
+        if (!adminToken) {
+          return json({ error: 'Operator API is not configured.' }, { status: 503 });
+        }
+
+        if (!isOperatorAuthorized(request.headers.get('authorization'), adminToken)) {
+          return json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        return json(await workspaceStore.getWorkspace());
+      }
+
+      const conversationActionMatch = url.pathname.match(/^\/api\/conversations\/([^/]+)\/actions$/);
+      if (request.method === 'POST' && conversationActionMatch) {
+        if (!adminToken) {
+          return json({ error: 'Operator API is not configured.' }, { status: 503 });
+        }
+        if (!isOperatorAuthorized(request.headers.get('authorization'), adminToken)) {
+          return json({ error: 'Unauthorized' }, { status: 401 });
+        }
+        if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) {
+          return json({ error: 'Content-Type must be application/json.' }, { status: 415 });
+        }
+
+        try {
+          const payload = await request.json();
+          const conversation = await workspaceStore.applyAction({
+            conversationId: decodeURIComponent(conversationActionMatch[1]),
+            action: payload.action
+          });
+          return json({ conversation });
+        } catch (error) {
+          return json({ error: error.message }, { status: error.status || 400 });
+        }
       }
 
       if (request.method === 'POST' && url.pathname === '/api/whatsapp/messages') {
@@ -215,19 +252,35 @@ export function createApp({
             normalizedMessage = {
               type: 'text',
               to: payload.to,
-              body: payload.body.trim()
+              body: payload.body.trim(),
+              ...(payload.conversationId ? { conversationId: payload.conversationId } : {})
             };
           }
 
           const result = await idempotencyStore.execute({
             key: idempotencyKey,
             fingerprint: JSON.stringify(normalizedMessage),
-            operation: () => normalizedMessage.type === 'template'
-              ? whatsappClient.sendTemplate(normalizedMessage)
-              : whatsappClient.sendText(normalizedMessage)
+            operation: async () => {
+              const sent = normalizedMessage.type === 'template'
+                ? await whatsappClient.sendTemplate(normalizedMessage)
+                : await whatsappClient.sendText(normalizedMessage);
+              const conversation = normalizedMessage.conversationId
+                ? await workspaceStore.recordReply({
+                    conversationId: normalizedMessage.conversationId,
+                    to: normalizedMessage.to,
+                    body: normalizedMessage.body,
+                    messageId: sent.messageId
+                  })
+                : null;
+              return { ...sent, conversation };
+            }
           });
 
-          return json({ sent: true, messageId: result.messageId }, { status: 201 });
+          return json({
+            sent: true,
+            messageId: result.messageId,
+            ...(result.conversation ? { conversation: result.conversation } : {})
+          }, { status: 201 });
         } catch (error) {
           return json({ error: error.message }, { status: error.status || 502 });
         }

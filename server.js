@@ -1,9 +1,10 @@
 import { createServer } from 'node:http';
+import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createApp } from './server/app.js';
-import { createFileEventStore } from './server/event-store.js';
+import { createSqliteWorkspaceStore } from './server/workspace-store.js';
 import { createNodeHandler } from './server/node-adapter.js';
 import { createWhatsAppClient } from './server/whatsapp-client.js';
 import { createWhatsAppWebhook } from './server/whatsapp-webhook.js';
@@ -24,19 +25,37 @@ const whatsappWebhook = createWhatsAppWebhook({
   verifyToken: process.env.WHATSAPP_VERIFY_TOKEN,
   appSecret: process.env.META_APP_SECRET
 });
-const eventStore = createFileEventStore({
+const workspaceStore = createSqliteWorkspaceStore({
   filePath: resolve(
     projectRoot,
-    process.env.WHATSAPP_EVENT_STORE_PATH || '.data/whatsapp-events.json'
+    process.env.WORKSPACE_DB_PATH || '.data/workspace.sqlite'
   )
 });
+const existingWorkspace = await workspaceStore.getWorkspace();
+if (!existingWorkspace.events.length) {
+  const legacyEventPath = resolve(
+    projectRoot,
+    process.env.WHATSAPP_EVENT_STORE_PATH || '.data/whatsapp-events.json'
+  );
+  try {
+    const legacyPayload = JSON.parse(await readFile(legacyEventPath, 'utf8'));
+    if (Array.isArray(legacyPayload.events)) {
+      await workspaceStore.applyEvents(legacyPayload.events);
+      console.log(`Imported ${legacyPayload.events.length} legacy WhatsApp events into the shared workspace.`);
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      console.warn(`Legacy event history was not imported: ${error.message}`);
+    }
+  }
+}
 const app = createApp({
   whatsappClient,
   whatsappWebhook,
   staticRoot: projectRoot,
   adminToken: process.env.OPERATOR_API_TOKEN,
   publicWebhookUrl: process.env.PUBLIC_WEBHOOK_URL,
-  eventStore
+  workspaceStore
 });
 const server = createServer(createNodeHandler(app));
 const port = Number.parseInt(process.env.PORT || '5179', 10);

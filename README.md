@@ -25,21 +25,22 @@ npm test
 - Intent, urgency, confidence, and order metadata
 - Operator actions to send, escalate, or defer AI replies
 - Queue metrics and automatic advancement after a decision
-- Browser-local persistence with a resettable demo state
+- Browser-local persistence for resettable demo records
 - Decision rail explaining intent, risk, recommended action, and activity
 - Integration-status dialog for WhatsApp Cloud API configuration
 - Template desk for checking Meta approval status and sending approved templates
 - Live WhatsApp activity ledger for inbound messages and delivery updates from signed webhooks
 - Signed inbound messages promoted into persistent, deduplicated operator inbox conversations
-- Confirmed live replies sent through the authenticated operator API, with Meta message IDs retained locally
+- Shared SQLite-backed live workspace across refreshes and browser sessions
+- Confirmed live replies sent through the authenticated operator API, with Meta message IDs retained server-side
 - Delivery-status webhooks reconciled into matching replies, with failures reopened for review
-- Bounded, deduplicated webhook history persisted across server restarts
+- Bounded, deduplicated webhook history and live conversation state persisted across server restarts
 - Visibility-aware live activity refresh with authorization and network recovery
 - Constant-time operator authentication and idempotent outbound message requests
 - Strict operator request validation and restrictive browser security headers
 - Future module navigation for warehouse, logistics, and analytics
 
-Seeded demo conversations remain browser-local. Conversations created from signed WhatsApp webhooks are marked live; their reply action requires loaded operator access and an in-app recipient/message review before the server contacts Meta. Escalate and defer actions remain browser-local.
+Seeded demo conversations remain browser-local. Conversations created from signed WhatsApp webhooks are marked live and stored in the local server workspace; their reply action requires loaded operator access and an in-app recipient/message review before the server contacts Meta. Live replies, escalations, and deferrals are shared across browser sessions.
 
 ## WhatsApp Cloud API setup
 
@@ -58,7 +59,8 @@ Seeded demo conversations remain browser-local. Conversations created from signe
    - `META_APP_SECRET`
    - `OPERATOR_API_TOKEN` (a private bearer token for operator-only APIs)
    - `PUBLIC_WEBHOOK_URL` (the public HTTPS callback registered with Meta)
-   - `WHATSAPP_EVENT_STORE_PATH` (optional local event-history path; defaults to `.data/whatsapp-events.json`)
+   - `WORKSPACE_DB_PATH` (optional shared local SQLite path; defaults to `.data/workspace.sqlite`)
+   - `WHATSAPP_EVENT_STORE_PATH` (optional one-time migration source for older event history)
    - `META_REQUEST_TIMEOUT_MS` (optional Graph API timeout; defaults to 15000 milliseconds)
 
 3. Start the app with `npm run dev`, then open the URL printed in the terminal. The **Connect WhatsApp** dialog reports any missing values.
@@ -88,9 +90,11 @@ The operator token is copied into page memory only, then removed from the passwo
 - `GET /api/whatsapp/status` — reports configuration readiness without exposing secrets
 - `GET /api/whatsapp/templates` — lists and normalizes Meta message templates; requires `Authorization: Bearer <OPERATOR_API_TOKEN>`
 - `POST /api/whatsapp/messages` — sends text or an approved template through the configured WhatsApp client; requires `Authorization: Bearer <OPERATOR_API_TOKEN>` and a unique `Idempotency-Key`
+- `GET /api/workspace` — returns shared live conversations and recent normalized events; requires operator authorization
+- `POST /api/conversations/:id/actions` — persists a live escalation or deferral; requires operator authorization
 - `GET /webhooks/whatsapp` — handles Meta's subscription challenge
 - `POST /webhooks/whatsapp` — verifies and normalizes webhook notifications
-- `GET /api/whatsapp/events` — returns recent normalized webhook events; requires `Authorization: Bearer <OPERATOR_API_TOKEN>`
+- `GET /api/whatsapp/events` — compatibility endpoint for recent normalized webhook events; requires operator authorization
 
 If `OPERATOR_API_TOKEN` is unset, operator-only endpoints return `503` and cannot send or expose customer data.
 

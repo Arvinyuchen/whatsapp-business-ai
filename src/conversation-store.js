@@ -2,58 +2,22 @@ function clone(value) {
   return structuredClone(value);
 }
 
-function getDeliveryLabel(status) {
-  const labels = {
-    sent: 'Live reply sent by WhatsApp',
-    delivered: 'Live reply delivered',
-    read: 'Live reply read',
-    failed: 'Live reply delivery failed',
-    undelivered: 'Live reply undelivered'
-  };
-
-  return labels[status] || `Live reply status: ${status || 'updated'}`;
-}
-
-function createWhatsAppConversation(event) {
-  const contactName = event.contactName || `WhatsApp ${String(event.from).slice(-4)}`;
-
-  return {
-    id: `whatsapp:${event.from}`,
-    source: 'whatsapp',
-    sourceId: event.from,
-    processedMessageIds: event.messageId ? [event.messageId] : [],
-    name: contactName,
-    company: 'WhatsApp contact',
-    status: 'Live inbound message',
-    workflow: 'open',
-    intent: 'New inbound message',
-    confidence: 100,
-    queue: [],
-    value: '$0',
-    valueAmount: 0,
-    risk: 'No automated decision has been made for this live message',
-    riskLevel: 'low',
-    action: 'Review the message and prepare a reply',
-    preview: event.text || 'New WhatsApp message',
-    tags: ['Live', 'Inbound'],
-    messages: [['customer', event.text || 'Message received without a text preview.']],
-    activity: [{ type: 'received', label: 'Inbound WhatsApp message received' }],
-    replies: {
-      helpful: 'Thanks for your message. I am reviewing the details now and will get back to you shortly.',
-      sales: 'Thanks for getting in touch. I am reviewing your request and will help you with the next step.',
-      ops: 'Inbound WhatsApp message received. Review the request, confirm the required action, and reply from the operator desk.'
-    }
-  };
-}
-
 export function createConversationStore(seedConversations, { storage } = {}) {
   const storedState = storage?.load();
-  let conversations = clone(storedState?.conversations || seedConversations);
+  let conversations = clone(storedState?.conversations || seedConversations)
+    .filter(({ source }) => source !== 'whatsapp');
   let filter = storedState?.filter || 'all';
-  let selectedId = storedState?.selectedId || conversations.find(({ workflow }) => workflow !== 'resolved')?.id || null;
+  let selectedId = conversations.some(({ id }) => id === storedState?.selectedId)
+    ? storedState.selectedId
+    : conversations.find(({ workflow }) => workflow !== 'resolved')?.id || null;
 
   function persist() {
-    storage?.save({ conversations, filter, selectedId });
+    const demoConversations = conversations.filter(({ source }) => source !== 'whatsapp');
+    storage?.save({
+      conversations: demoConversations,
+      filter,
+      selectedId: demoConversations.some(({ id }) => id === selectedId) ? selectedId : null
+    });
   }
 
   function isActive(conversation) {
@@ -113,103 +77,15 @@ export function createConversationStore(seedConversations, { storage } = {}) {
       }
     },
 
-    ingestWhatsAppEvents(events) {
-      const result = { created: 0, updated: 0, ignored: 0 };
-      const chronologicalEvents = [...events].sort((left, right) => {
-        return (Number(left.timestamp) || 0) - (Number(right.timestamp) || 0);
-      });
-      const latestStatusEvents = new Map();
-      chronologicalEvents.forEach((event) => {
-        if (event.type === 'message.status' && event.messageId) {
-          latestStatusEvents.set(event.messageId, event);
-        }
-      });
-
-      for (const event of chronologicalEvents) {
-        if (event.type === 'message.status' && event.messageId) {
-          if (latestStatusEvents.get(event.messageId) !== event) continue;
-
-          const conversationIndex = conversations.findIndex((conversation) => {
-            return conversation.activity?.some(({ messageId }) => messageId === event.messageId);
-          });
-          const conversation = conversations[conversationIndex];
-          const activity = conversation?.activity?.find(({ messageId }) => {
-            return messageId === event.messageId;
-          });
-          if (!activity) continue;
-
-          const deliveryStatus = String(event.status || 'updated').toLowerCase();
-          if (activity.deliveryStatus === deliveryStatus) {
-            result.ignored += 1;
-            continue;
-          }
-
-          activity.deliveryStatus = deliveryStatus;
-          activity.label = getDeliveryLabel(deliveryStatus);
-          if (event.timestamp) activity.timestamp = event.timestamp;
-          conversation.status = activity.label;
-
-          if (['failed', 'undelivered'].includes(deliveryStatus)) {
-            conversation.workflow = 'needs_review';
-            conversation.risk = 'WhatsApp could not deliver the most recent live reply';
-            conversation.riskLevel = 'high';
-            conversation.action = 'Review the failure and choose a template or another contact path';
-            conversation.tags = [...new Set([...(conversation.tags || []), 'Delivery failed'])];
-            conversations.splice(conversationIndex, 1);
-            conversations.unshift(conversation);
-          }
-
-          result.updated += 1;
-          continue;
-        }
-
-        if (event.type !== 'message.received' || !event.from) continue;
-
-        const existingIndex = conversations.findIndex((conversation) => {
-          return conversation.source === 'whatsapp' && conversation.sourceId === event.from;
-        });
-        const existing = conversations[existingIndex];
-        if (existing?.processedMessageIds?.includes(event.messageId)) {
-          result.ignored += 1;
-          continue;
-        }
-
-        if (!existing) {
-          conversations.unshift(createWhatsAppConversation(event));
-          result.created += 1;
-          continue;
-        }
-
-        existing.processedMessageIds ??= [];
-        if (event.messageId) existing.processedMessageIds.push(event.messageId);
-        existing.name = event.contactName || existing.name;
-        existing.status = 'New live message';
-        existing.workflow = 'open';
-        existing.risk = 'No automated decision has been made for this live message';
-        existing.riskLevel = 'low';
-        existing.action = 'Review the message and prepare a reply';
-        existing.tags = (existing.tags || []).filter((tag) => tag !== 'Delivery failed');
-        existing.preview = event.text || 'New WhatsApp message';
-        existing.messages.push([
-          'customer',
-          event.text || 'Message received without a text preview.'
-        ]);
-        existing.activity ??= [];
-        existing.activity.push({
-          type: 'received',
-          label: 'New inbound WhatsApp message received'
-        });
-        conversations.splice(existingIndex, 1);
-        conversations.unshift(existing);
-        result.updated += 1;
-      }
-
-      if (result.created || result.updated) {
-        ensureVisibleSelection();
-        persist();
-      }
-
-      return result;
+    syncLiveConversations(liveConversations) {
+      const currentLive = conversations.filter(({ source }) => source === 'whatsapp');
+      const nextLive = clone(liveConversations || []);
+      conversations = [
+        ...nextLive,
+        ...conversations.filter(({ source }) => source !== 'whatsapp')
+      ];
+      ensureVisibleSelection();
+      return { changed: JSON.stringify(currentLive) !== JSON.stringify(nextLive) };
     },
 
     sendReply(id, text, { live = false, messageId } = {}) {

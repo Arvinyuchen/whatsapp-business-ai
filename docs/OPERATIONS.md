@@ -22,8 +22,9 @@
 
 - Expose only `/webhooks/whatsapp` through the public HTTPS tunnel or reverse proxy.
 - Keep the dashboard and `/api/whatsapp/*` endpoints private.
-- Signed normalized events are stored at `WHATSAPP_EVENT_STORE_PATH`, defaulting to `.data/whatsapp-events.json`.
-- The event file contains customer identifiers and message previews. Restrict host access and include it in encrypted backups only when retention is required.
+- Signed normalized events and live conversation state are stored in SQLite at `WORKSPACE_DB_PATH`, defaulting to `.data/workspace.sqlite`.
+- On first start, an empty workspace imports events from `WHATSAPP_EVENT_STORE_PATH` when the legacy JSON file exists. The legacy file is left intact for recovery.
+- The workspace database contains customer identifiers and message previews. Restrict host access and include it in encrypted backups only when retention is required.
 - After a server restart, load the workspace and confirm recent events are still present.
 - If automatic refresh reports an error, verify the local server and network. The visible page retries when connectivity returns.
 - A `401` response clears operator access and stops polling. Reload the workspace with the current token.
@@ -38,6 +39,6 @@
 
 ## Production boundary
 
-The bundled file event store is appropriate for a single Node process. Before running multiple application instances, replace it with a shared durable store that provides atomic deduplication. Keep the same `append` and `list` boundary used by `server/app.js`.
+The bundled SQLite workspace provides atomic, durable state for one local server and multiple browser/operator sessions. A future multi-host deployment should replace the adapter with a network database while preserving the `applyEvents`, `getWorkspace`, `recordReply`, and `applyAction` interface.
 
 Before enabling non-test customer traffic, complete the Meta app publishing and business-verification requirements for the target WhatsApp Business account, validate the approved template set, and run one controlled inbound/reply/delivery cycle with an authorized test recipient.

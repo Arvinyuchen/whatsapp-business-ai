@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 import { createApp } from '../server/app.js';
+import { createMemoryWorkspaceStore } from '../server/workspace-store.js';
 
 const projectRoot = fileURLToPath(new URL('..', import.meta.url));
 
@@ -171,6 +172,111 @@ test('webhook events reject unauthenticated operator access', async () => {
 
   assert.equal(response.status, 401);
   assert.deepEqual(await response.json(), { error: 'Unauthorized' });
+});
+
+test('operator workspace exposes the shared live conversation projection', async () => {
+  const workspaceStore = createMemoryWorkspaceStore();
+  await workspaceStore.applyEvents([{
+    type: 'message.received',
+    messageId: 'wamid.workspace',
+    from: '8619566373059',
+    text: 'Is this shared?'
+  }]);
+  const app = createApp({
+    adminToken: 'operator-secret',
+    workspaceStore,
+    whatsappClient: { getStatus: () => ({ configured: true, graphVersion: 'v25.0', missing: [] }) },
+    whatsappWebhook: { getStatus: () => ({ configured: true, missing: [] }) }
+  });
+
+  const response = await app.handle(new Request('http://localhost/api/workspace', {
+    headers: { authorization: 'Bearer operator-secret' }
+  }));
+  const workspace = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(workspace.events.length, 1);
+  assert.equal(workspace.conversations[0].id, 'whatsapp:8619566373059');
+});
+
+test('live reply is recorded once in the shared workspace with an idempotent retry', async () => {
+  let sendCount = 0;
+  const workspaceStore = createMemoryWorkspaceStore();
+  await workspaceStore.applyEvents([{
+    type: 'message.received',
+    messageId: 'wamid.inbound.shared',
+    from: '8619566373059',
+    text: 'Can you help?'
+  }]);
+  const app = createApp({
+    adminToken: 'operator-secret',
+    workspaceStore,
+    whatsappClient: {
+      getStatus: () => ({ configured: true, graphVersion: 'v25.0', missing: [] }),
+      sendText: async () => {
+        sendCount += 1;
+        return { messageId: 'wamid.outbound.shared' };
+      }
+    },
+    whatsappWebhook: { getStatus: () => ({ configured: true, missing: [] }) }
+  });
+  const request = () => new Request('http://localhost/api/whatsapp/messages', {
+    method: 'POST',
+    headers: {
+      authorization: 'Bearer operator-secret',
+      'content-type': 'application/json',
+      'idempotency-key': 'shared-reply-request'
+    },
+    body: JSON.stringify({
+      conversationId: 'whatsapp:8619566373059',
+      to: '8619566373059',
+      body: 'Yes, I can help.'
+    })
+  });
+
+  const first = await app.handle(request());
+  const retry = await app.handle(request());
+  const firstPayload = await first.json();
+  const retryPayload = await retry.json();
+  const workspace = await workspaceStore.getWorkspace();
+
+  assert.equal(first.status, 201);
+  assert.equal(retry.status, 201);
+  assert.equal(firstPayload.conversation.workflow, 'resolved');
+  assert.deepEqual(retryPayload, firstPayload);
+  assert.equal(sendCount, 1);
+  assert.equal(workspace.conversations[0].messages.filter(([sender]) => sender === 'agent').length, 1);
+});
+
+test('operator actions update live conversations on the server', async () => {
+  const workspaceStore = createMemoryWorkspaceStore();
+  await workspaceStore.applyEvents([{
+    type: 'message.received',
+    messageId: 'wamid.action',
+    from: '8619566373059',
+    text: 'Please follow up later.'
+  }]);
+  const app = createApp({
+    adminToken: 'operator-secret',
+    workspaceStore,
+    whatsappClient: { getStatus: () => ({ configured: true, graphVersion: 'v25.0', missing: [] }) },
+    whatsappWebhook: { getStatus: () => ({ configured: true, missing: [] }) }
+  });
+
+  const response = await app.handle(new Request(
+    'http://localhost/api/conversations/whatsapp%3A8619566373059/actions',
+    {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer operator-secret',
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({ action: 'defer' })
+    }
+  ));
+
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).conversation.workflow, 'deferred');
 });
 
 test('operator can list WhatsApp message templates', async () => {

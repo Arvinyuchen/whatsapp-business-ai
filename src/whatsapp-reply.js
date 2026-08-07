@@ -1,5 +1,6 @@
 export async function sendWhatsAppReply({
   token,
+  conversationId,
   to,
   body,
   idempotencyKey = crypto.randomUUID(),
@@ -19,7 +20,11 @@ export async function sendWhatsAppReply({
       'content-type': 'application/json',
       'idempotency-key': idempotencyKey
     },
-    body: JSON.stringify({ to: recipient, body: reply })
+    body: JSON.stringify({
+      to: recipient,
+      body: reply,
+      ...(conversationId ? { conversationId } : {})
+    })
   });
   const payload = await response.json();
 
@@ -27,5 +32,8 @@ export async function sendWhatsAppReply({
     throw new Error(payload.error || 'WhatsApp could not accept the reply.');
   }
 
-  return { messageId: payload.messageId };
+  return {
+    messageId: payload.messageId,
+    ...(payload.conversation ? { conversation: payload.conversation } : {})
+  };
 }

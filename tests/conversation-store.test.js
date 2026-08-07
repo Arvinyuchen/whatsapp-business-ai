@@ -41,19 +41,6 @@ test('operator can send a non-empty reply and resolve the conversation', () => {
   assert.equal(conversation.activity.at(-1).type, 'sent');
 });
 
-test('accepted live replies retain the Meta message ID', () => {
-  const store = createConversationStore([makeConversation({ source: 'whatsapp' })]);
-
-  store.sendReply('ava', 'Your order is ready.', {
-    live: true,
-    messageId: 'wamid.sent'
-  });
-
-  const activity = store.getSnapshot().conversations[0].activity.at(-1);
-  assert.equal(activity.label, 'Live reply accepted by WhatsApp');
-  assert.equal(activity.messageId, 'wamid.sent');
-});
-
 test('operator cannot send a blank reply', () => {
   const store = createConversationStore([makeConversation()]);
 
@@ -152,183 +139,36 @@ test('deferred conversations leave the active queue and the operator advances', 
   assert.deepEqual(snapshot.visibleConversations.map(({ id }) => id), ['second']);
 });
 
-test('inbound WhatsApp events create live inbox conversations', () => {
-  const store = createConversationStore([makeConversation({ workflow: 'open' })]);
-
-  const result = store.ingestWhatsAppEvents([{
-    type: 'message.received',
-    messageId: 'wamid.first',
-    from: '8619566373059',
-    contactName: 'New test number',
-    text: 'Can you help with an order?'
-  }]);
-
-  const conversation = store.getSnapshot().conversations[0];
-  assert.deepEqual(result, { created: 1, updated: 0, ignored: 0 });
-  assert.equal(conversation.id, 'whatsapp:8619566373059');
-  assert.equal(conversation.name, 'New test number');
-  assert.equal(conversation.workflow, 'open');
-  assert.deepEqual(conversation.messages, [['customer', 'Can you help with an order?']]);
-});
-
-test('new messages reopen and move an existing WhatsApp conversation to the top', () => {
-  const store = createConversationStore([
-    makeConversation({ id: 'other', workflow: 'open' })
-  ]);
-  store.ingestWhatsAppEvents([{
-    type: 'message.received',
-    messageId: 'wamid.first',
-    from: '8619566373059',
-    contactName: 'New test number',
-    text: 'First message'
-  }]);
-  store.sendReply('whatsapp:8619566373059', 'First reply');
-
-  const result = store.ingestWhatsAppEvents([{
-    type: 'message.received',
-    messageId: 'wamid.second',
-    from: '8619566373059',
-    contactName: 'Updated name',
-    text: 'Follow-up message'
-  }]);
-
-  const conversation = store.getSnapshot().conversations[0];
-  assert.deepEqual(result, { created: 0, updated: 1, ignored: 0 });
-  assert.equal(conversation.id, 'whatsapp:8619566373059');
-  assert.equal(conversation.name, 'Updated name');
-  assert.equal(conversation.workflow, 'open');
-  assert.deepEqual(conversation.messages.at(-1), ['customer', 'Follow-up message']);
-});
-
-test('replayed WhatsApp events are ignored and remain deduplicated after reload', () => {
+test('server-owned live conversations sync into the inbox without local persistence', () => {
   const storage = createMemoryStorage();
-  const event = {
-    type: 'message.received',
-    messageId: 'wamid.duplicate',
-    from: '8619566373059',
-    text: 'Only store this once'
-  };
-  const firstStore = createConversationStore([], { storage });
-  firstStore.ingestWhatsAppEvents([event]);
-  const reloadedStore = createConversationStore([], { storage });
-
-  const result = reloadedStore.ingestWhatsAppEvents([event]);
-  const conversation = reloadedStore.getSnapshot().conversations[0];
-
-  assert.deepEqual(result, { created: 0, updated: 0, ignored: 1 });
-  assert.equal(conversation.messages.length, 1);
-});
-
-test('inbound event batches become chronological conversation transcripts', () => {
-  const store = createConversationStore([]);
-
-  store.ingestWhatsAppEvents([{
-    type: 'message.received',
-    messageId: 'wamid.newer',
-    from: '8619566373059',
-    text: 'Second message',
-    timestamp: '200'
-  }, {
-    type: 'message.received',
-    messageId: 'wamid.older',
-    from: '8619566373059',
-    text: 'First message',
-    timestamp: '100'
-  }]);
-
-  const conversation = store.getSnapshot().conversations[0];
-  assert.deepEqual(conversation.messages, [
-    ['customer', 'First message'],
-    ['customer', 'Second message']
-  ]);
-  assert.equal(conversation.preview, 'Second message');
-});
-
-test('delivery webhooks update the matching live reply without reopening it', () => {
-  const store = createConversationStore([]);
-  store.ingestWhatsAppEvents([{
-    type: 'message.received',
-    messageId: 'wamid.inbound',
-    from: '8619566373059',
-    text: 'Can you help?'
-  }]);
-  store.sendReply('whatsapp:8619566373059', 'Yes, I can help.', {
-    live: true,
-    messageId: 'wamid.outbound'
+  const store = createConversationStore([makeConversation({ workflow: 'open' })], { storage });
+  const liveConversation = makeConversation({
+    id: 'whatsapp:8619566373059',
+    source: 'whatsapp',
+    sourceId: '8619566373059',
+    workflow: 'open',
+    queue: [],
+    activity: []
   });
 
-  const result = store.ingestWhatsAppEvents([{
-    type: 'message.status',
-    messageId: 'wamid.outbound',
-    status: 'delivered',
-    timestamp: '300'
-  }]);
+  assert.deepEqual(store.syncLiveConversations([liveConversation]), { changed: true });
+  store.select(liveConversation.id);
+  store.setFilter('open');
 
-  const conversation = store.getSnapshot().conversations[0];
-  const activity = conversation.activity.at(-1);
-  assert.deepEqual(result, { created: 0, updated: 1, ignored: 0 });
-  assert.equal(conversation.workflow, 'resolved');
-  assert.equal(activity.deliveryStatus, 'delivered');
-  assert.equal(activity.label, 'Live reply delivered');
+  assert.equal(store.getSnapshot().conversations[0].id, liveConversation.id);
+  const reloaded = createConversationStore([makeConversation({ workflow: 'open' })], { storage });
+  assert.equal(reloaded.getSnapshot().conversations.some(({ source }) => source === 'whatsapp'), false);
 });
 
-test('only the latest delivery state is applied when webhook history is replayed', () => {
+test('live workspace sync replaces stale server projections', () => {
   const store = createConversationStore([]);
-  store.ingestWhatsAppEvents([{
-    type: 'message.received',
-    messageId: 'wamid.inbound',
-    from: '8619566373059',
-    text: 'Can you help?'
-  }]);
-  store.sendReply('whatsapp:8619566373059', 'Yes, I can help.', {
-    live: true,
-    messageId: 'wamid.outbound'
+  const first = makeConversation({
+    id: 'whatsapp:1', source: 'whatsapp', workflow: 'open', queue: [], activity: []
   });
-  const deliveryHistory = [{
-    type: 'message.status',
-    messageId: 'wamid.outbound',
-    status: 'delivered',
-    timestamp: '300'
-  }, {
-    type: 'message.status',
-    messageId: 'wamid.outbound',
-    status: 'read',
-    timestamp: '400'
-  }];
+  const resolved = { ...first, workflow: 'resolved' };
 
-  const firstResult = store.ingestWhatsAppEvents(deliveryHistory);
-  const replayResult = store.ingestWhatsAppEvents(deliveryHistory);
-  const conversation = store.getSnapshot().conversations[0];
-
-  assert.deepEqual(firstResult, { created: 0, updated: 1, ignored: 0 });
-  assert.deepEqual(replayResult, { created: 0, updated: 0, ignored: 1 });
-  assert.equal(conversation.activity.at(-1).deliveryStatus, 'read');
-  assert.equal(conversation.activity.at(-1).label, 'Live reply read');
-});
-
-test('failed delivery reopens the conversation for operator review', () => {
-  const store = createConversationStore([makeConversation({ id: 'other', workflow: 'open' })]);
-  store.ingestWhatsAppEvents([{
-    type: 'message.received',
-    messageId: 'wamid.inbound',
-    from: '8619566373059',
-    text: 'Can you help?'
-  }]);
-  store.sendReply('whatsapp:8619566373059', 'Yes, I can help.', {
-    live: true,
-    messageId: 'wamid.outbound'
-  });
-
-  store.ingestWhatsAppEvents([{
-    type: 'message.status',
-    messageId: 'wamid.outbound',
-    status: 'failed',
-    timestamp: '300'
-  }]);
-
-  const conversation = store.getSnapshot().conversations[0];
-  assert.equal(conversation.id, 'whatsapp:8619566373059');
-  assert.equal(conversation.workflow, 'needs_review');
-  assert.equal(conversation.riskLevel, 'high');
-  assert.ok(conversation.tags.includes('Delivery failed'));
+  store.syncLiveConversations([first]);
+  assert.deepEqual(store.syncLiveConversations([resolved]), { changed: true });
+  assert.equal(store.getSnapshot().conversations[0].workflow, 'resolved');
+  assert.deepEqual(store.syncLiveConversations([resolved]), { changed: false });
 });

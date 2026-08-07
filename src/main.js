@@ -3,6 +3,7 @@ import { createActivityRefresh } from './activity-refresh.js';
 import { seedConversations } from './conversations.js';
 import { createLocalStorageAdapter } from './storage.js';
 import { createRequestKeyStore } from './request-key-store.js';
+import { applyLiveConversationAction, loadLiveWorkspace } from './live-workspace.js';
 import { presentWhatsAppEvent, sortWhatsAppEvents } from './whatsapp-activity.js';
 import { sendWhatsAppReply } from './whatsapp-reply.js';
 
@@ -422,31 +423,19 @@ async function loadWhatsAppActivity({ useEnteredToken = false, silent = false } 
   if (!silent) setActivityFeedback('Loading signed webhook activity…');
 
   try {
-    const response = await fetch('/api/whatsapp/events', {
-      headers: {
-        accept: 'application/json',
-        authorization: `Bearer ${token}`
-      }
-    });
-    const payload = await response.json();
-    if (!response.ok) {
-      const error = new Error(payload.error || 'Unable to load WhatsApp activity.');
-      error.status = response.status;
-      throw error;
-    }
+    const payload = await loadLiveWorkspace({ token });
 
     uiState.events = payload.events;
     const selectedBeforeSync = store.getSnapshot().selectedId;
-    const syncResult = store.ingestWhatsAppEvents(payload.events);
+    const syncResult = store.syncLiveConversations(payload.conversations);
     const selectedAfterSync = store.getSnapshot().selectedId;
-    if (syncResult.created || syncResult.updated) {
+    if (syncResult.changed) {
       render({ refreshDraft: selectedBeforeSync !== selectedAfterSync });
     }
     renderWhatsAppActivity();
-    const syncedCount = syncResult.created + syncResult.updated;
     setActivityFeedback(
       payload.events.length
-        ? `${payload.events.length} recent ${payload.events.length === 1 ? 'event' : 'events'} from signed webhooks${syncedCount ? ` · ${syncedCount} synced to the inbox` : ''} · Auto-refresh active.`
+        ? `${payload.events.length} recent ${payload.events.length === 1 ? 'event' : 'events'} from signed webhooks · ${payload.conversations.length} shared live ${payload.conversations.length === 1 ? 'conversation' : 'conversations'} · Auto-refresh active.`
         : 'Webhook connection is ready. No events have arrived yet · Auto-refresh active.',
       'success'
     );
@@ -689,6 +678,7 @@ elements.sendButton.addEventListener('click', async () => {
       const requestScope = `live-reply:${conversation.id}`;
       const result = await sendWhatsAppReply({
         token: uiState.operatorToken,
+        conversationId: conversation.id,
         to: conversation.sourceId,
         body: reply,
         idempotencyKey: requestKeys.get(
@@ -697,10 +687,13 @@ elements.sendButton.addEventListener('click', async () => {
         )
       });
       requestKeys.complete(requestScope);
-      store.sendReply(conversation.id, reply, {
-        live: true,
-        messageId: result.messageId
-      });
+      if (result.conversation) {
+        const currentLive = store.getSnapshot().conversations
+          .filter(({ source, id }) => source === 'whatsapp' && id !== result.conversation.id);
+        store.syncLiveConversations([result.conversation, ...currentLive]);
+      } else {
+        await loadWhatsAppActivity({ silent: true });
+      }
       showToast(`Live reply accepted by WhatsApp for ${conversation.name}.`);
     } else {
       store.sendReply(conversation.id, reply);
@@ -725,20 +718,50 @@ elements.sendButton.addEventListener('click', async () => {
   }
 });
 
-elements.escalateButton.addEventListener('click', () => {
+elements.escalateButton.addEventListener('click', async () => {
   const conversation = store.getSnapshot().selectedConversation;
   if (!conversation || conversation.workflow === 'needs_review') return;
-  store.escalate(conversation.id);
-  showToast(`${conversation.name} moved to human review.`);
-  render();
+  try {
+    if (conversation.source === 'whatsapp') {
+      const result = await applyLiveConversationAction({
+        token: uiState.operatorToken,
+        conversationId: conversation.id,
+        action: 'escalate'
+      });
+      const currentLive = store.getSnapshot().conversations
+        .filter(({ source, id }) => source === 'whatsapp' && id !== result.conversation.id);
+      store.syncLiveConversations([result.conversation, ...currentLive]);
+    } else {
+      store.escalate(conversation.id);
+    }
+    showToast(`${conversation.name} moved to human review.`);
+    render();
+  } catch (error) {
+    showToast(error.message);
+  }
 });
 
-elements.deferButton.addEventListener('click', () => {
+elements.deferButton.addEventListener('click', async () => {
   const conversation = store.getSnapshot().selectedConversation;
   if (!conversation) return;
-  store.defer(conversation.id);
-  showToast(`${conversation.name} deferred until later today.`);
-  render();
+  try {
+    if (conversation.source === 'whatsapp') {
+      const result = await applyLiveConversationAction({
+        token: uiState.operatorToken,
+        conversationId: conversation.id,
+        action: 'defer'
+      });
+      const currentLive = store.getSnapshot().conversations
+        .filter(({ source, id }) => source === 'whatsapp' && id !== result.conversation.id);
+      store.syncLiveConversations([result.conversation, ...currentLive]);
+    } else {
+      store.defer(conversation.id);
+    }
+    showToast(`${conversation.name} deferred until later today.`);
+    render();
+  } catch (error) {
+    showToast(error.message);
+  }
 });
 
 elements.resetButton.addEventListener('click', () => {
