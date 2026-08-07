@@ -32,6 +32,7 @@ npm test
 - Live WhatsApp activity ledger for inbound messages and delivery updates from signed webhooks
 - Signed inbound messages promoted into persistent, deduplicated operator inbox conversations
 - Confirmed live replies sent through the authenticated operator API, with Meta message IDs retained locally
+- Delivery-status webhooks reconciled into matching replies, with failures reopened for review
 - Future module navigation for warehouse, logistics, and analytics
 
 Seeded demo conversations remain browser-local. Conversations created from signed WhatsApp webhooks are marked live; their reply action requires loaded operator access and a separate confirmation before the server contacts Meta. Escalate and defer actions remain browser-local.

@@ -243,3 +243,92 @@ test('inbound event batches become chronological conversation transcripts', () =
   ]);
   assert.equal(conversation.preview, 'Second message');
 });
+
+test('delivery webhooks update the matching live reply without reopening it', () => {
+  const store = createConversationStore([]);
+  store.ingestWhatsAppEvents([{
+    type: 'message.received',
+    messageId: 'wamid.inbound',
+    from: '8619566373059',
+    text: 'Can you help?'
+  }]);
+  store.sendReply('whatsapp:8619566373059', 'Yes, I can help.', {
+    live: true,
+    messageId: 'wamid.outbound'
+  });
+
+  const result = store.ingestWhatsAppEvents([{
+    type: 'message.status',
+    messageId: 'wamid.outbound',
+    status: 'delivered',
+    timestamp: '300'
+  }]);
+
+  const conversation = store.getSnapshot().conversations[0];
+  const activity = conversation.activity.at(-1);
+  assert.deepEqual(result, { created: 0, updated: 1, ignored: 0 });
+  assert.equal(conversation.workflow, 'resolved');
+  assert.equal(activity.deliveryStatus, 'delivered');
+  assert.equal(activity.label, 'Live reply delivered');
+});
+
+test('only the latest delivery state is applied when webhook history is replayed', () => {
+  const store = createConversationStore([]);
+  store.ingestWhatsAppEvents([{
+    type: 'message.received',
+    messageId: 'wamid.inbound',
+    from: '8619566373059',
+    text: 'Can you help?'
+  }]);
+  store.sendReply('whatsapp:8619566373059', 'Yes, I can help.', {
+    live: true,
+    messageId: 'wamid.outbound'
+  });
+  const deliveryHistory = [{
+    type: 'message.status',
+    messageId: 'wamid.outbound',
+    status: 'delivered',
+    timestamp: '300'
+  }, {
+    type: 'message.status',
+    messageId: 'wamid.outbound',
+    status: 'read',
+    timestamp: '400'
+  }];
+
+  const firstResult = store.ingestWhatsAppEvents(deliveryHistory);
+  const replayResult = store.ingestWhatsAppEvents(deliveryHistory);
+  const conversation = store.getSnapshot().conversations[0];
+
+  assert.deepEqual(firstResult, { created: 0, updated: 1, ignored: 0 });
+  assert.deepEqual(replayResult, { created: 0, updated: 0, ignored: 1 });
+  assert.equal(conversation.activity.at(-1).deliveryStatus, 'read');
+  assert.equal(conversation.activity.at(-1).label, 'Live reply read');
+});
+
+test('failed delivery reopens the conversation for operator review', () => {
+  const store = createConversationStore([makeConversation({ id: 'other', workflow: 'open' })]);
+  store.ingestWhatsAppEvents([{
+    type: 'message.received',
+    messageId: 'wamid.inbound',
+    from: '8619566373059',
+    text: 'Can you help?'
+  }]);
+  store.sendReply('whatsapp:8619566373059', 'Yes, I can help.', {
+    live: true,
+    messageId: 'wamid.outbound'
+  });
+
+  store.ingestWhatsAppEvents([{
+    type: 'message.status',
+    messageId: 'wamid.outbound',
+    status: 'failed',
+    timestamp: '300'
+  }]);
+
+  const conversation = store.getSnapshot().conversations[0];
+  assert.equal(conversation.id, 'whatsapp:8619566373059');
+  assert.equal(conversation.workflow, 'needs_review');
+  assert.equal(conversation.riskLevel, 'high');
+  assert.ok(conversation.tags.includes('Delivery failed'));
+});

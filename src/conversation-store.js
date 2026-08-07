@@ -2,6 +2,18 @@ function clone(value) {
   return structuredClone(value);
 }
 
+function getDeliveryLabel(status) {
+  const labels = {
+    sent: 'Live reply sent by WhatsApp',
+    delivered: 'Live reply delivered',
+    read: 'Live reply read',
+    failed: 'Live reply delivery failed',
+    undelivered: 'Live reply undelivered'
+  };
+
+  return labels[status] || `Live reply status: ${status || 'updated'}`;
+}
+
 function createWhatsAppConversation(event) {
   const contactName = event.contactName || `WhatsApp ${String(event.from).slice(-4)}`;
 
@@ -106,8 +118,51 @@ export function createConversationStore(seedConversations, { storage } = {}) {
       const chronologicalEvents = [...events].sort((left, right) => {
         return (Number(left.timestamp) || 0) - (Number(right.timestamp) || 0);
       });
+      const latestStatusEvents = new Map();
+      chronologicalEvents.forEach((event) => {
+        if (event.type === 'message.status' && event.messageId) {
+          latestStatusEvents.set(event.messageId, event);
+        }
+      });
 
       for (const event of chronologicalEvents) {
+        if (event.type === 'message.status' && event.messageId) {
+          if (latestStatusEvents.get(event.messageId) !== event) continue;
+
+          const conversationIndex = conversations.findIndex((conversation) => {
+            return conversation.activity?.some(({ messageId }) => messageId === event.messageId);
+          });
+          const conversation = conversations[conversationIndex];
+          const activity = conversation?.activity?.find(({ messageId }) => {
+            return messageId === event.messageId;
+          });
+          if (!activity) continue;
+
+          const deliveryStatus = String(event.status || 'updated').toLowerCase();
+          if (activity.deliveryStatus === deliveryStatus) {
+            result.ignored += 1;
+            continue;
+          }
+
+          activity.deliveryStatus = deliveryStatus;
+          activity.label = getDeliveryLabel(deliveryStatus);
+          if (event.timestamp) activity.timestamp = event.timestamp;
+          conversation.status = activity.label;
+
+          if (['failed', 'undelivered'].includes(deliveryStatus)) {
+            conversation.workflow = 'needs_review';
+            conversation.risk = 'WhatsApp could not deliver the most recent live reply';
+            conversation.riskLevel = 'high';
+            conversation.action = 'Review the failure and choose a template or another contact path';
+            conversation.tags = [...new Set([...(conversation.tags || []), 'Delivery failed'])];
+            conversations.splice(conversationIndex, 1);
+            conversations.unshift(conversation);
+          }
+
+          result.updated += 1;
+          continue;
+        }
+
         if (event.type !== 'message.received' || !event.from) continue;
 
         const existingIndex = conversations.findIndex((conversation) => {
@@ -130,6 +185,10 @@ export function createConversationStore(seedConversations, { storage } = {}) {
         existing.name = event.contactName || existing.name;
         existing.status = 'New live message';
         existing.workflow = 'open';
+        existing.risk = 'No automated decision has been made for this live message';
+        existing.riskLevel = 'low';
+        existing.action = 'Review the message and prepare a reply';
+        existing.tags = (existing.tags || []).filter((tag) => tag !== 'Delivery failed');
         existing.preview = event.text || 'New WhatsApp message';
         existing.messages.push([
           'customer',
