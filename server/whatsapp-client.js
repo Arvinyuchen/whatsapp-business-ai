@@ -3,12 +3,27 @@ export function createWhatsAppClient({
   phoneNumberId,
   whatsappBusinessAccountId,
   graphVersion = 'v25.0',
+  requestTimeoutMs = 15_000,
   fetchAdapter = fetch
 }) {
   const missing = [
     !accessToken && 'WHATSAPP_ACCESS_TOKEN',
     !phoneNumberId && 'WHATSAPP_PHONE_NUMBER_ID'
   ].filter(Boolean);
+
+  async function fetchMeta(url, options = {}) {
+    try {
+      return await fetchAdapter(url, {
+        ...options,
+        signal: AbortSignal.timeout(requestTimeoutMs)
+      });
+    } catch (error) {
+      if (['AbortError', 'TimeoutError'].includes(error.name)) {
+        throw new Error('WhatsApp request timed out. Try again.');
+      }
+      throw error;
+    }
+  }
 
   return {
     getStatus() {
@@ -24,7 +39,7 @@ export function createWhatsAppClient({
         throw new Error('WhatsApp template management is not configured.');
       }
 
-      const response = await fetchAdapter(
+      const response = await fetchMeta(
         `https://graph.facebook.com/${graphVersion}/${whatsappBusinessAccountId}/message_templates?fields=id,name,status,language,category,components&limit=100`,
         {
           headers: { authorization: `Bearer ${accessToken}` }
@@ -53,7 +68,7 @@ export function createWhatsAppClient({
         throw new Error('WhatsApp Cloud API is not configured.');
       }
 
-      const response = await fetchAdapter(
+      const response = await fetchMeta(
         `https://graph.facebook.com/${graphVersion}/${phoneNumberId}/messages`,
         {
           method: 'POST',
@@ -87,7 +102,7 @@ export function createWhatsAppClient({
         throw new Error('WhatsApp Cloud API is not configured.');
       }
 
-      const response = await fetchAdapter(
+      const response = await fetchMeta(
         `https://graph.facebook.com/${graphVersion}/${phoneNumberId}/messages`,
         {
           method: 'POST',

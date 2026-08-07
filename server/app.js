@@ -2,6 +2,15 @@ import { readFile } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 
 import { createMemoryEventStore } from './event-store.js';
+import { createIdempotencyStore, isOperatorAuthorized } from './operator-security.js';
+
+const securityHeaders = {
+  'content-security-policy': "default-src 'self'; base-uri 'none'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data:; script-src 'self'; style-src 'self'",
+  'permissions-policy': 'camera=(), geolocation=(), microphone=()',
+  'referrer-policy': 'no-referrer',
+  'x-content-type-options': 'nosniff',
+  'x-frame-options': 'DENY'
+};
 
 const contentTypes = {
   '.css': 'text/css; charset=utf-8',
@@ -14,7 +23,7 @@ const contentTypes = {
 function json(payload, { status = 200 } = {}) {
   return Response.json(payload, {
     status,
-    headers: { 'cache-control': 'no-store' }
+    headers: { ...securityHeaders, 'cache-control': 'no-store' }
   });
 }
 
@@ -22,6 +31,7 @@ function text(payload, { status = 200 } = {}) {
   return new Response(payload, {
     status,
     headers: {
+      ...securityHeaders,
       'content-type': 'text/plain; charset=utf-8',
       'cache-control': 'no-store'
     }
@@ -44,6 +54,7 @@ async function serveStatic(pathname, staticRoot, method) {
     return new Response(method === 'HEAD' ? null : body, {
       status: 200,
       headers: {
+        ...securityHeaders,
         'content-type': contentTypes[extname(filePath)] || 'application/octet-stream',
         'cache-control': 'no-store'
       }
@@ -59,7 +70,8 @@ export function createApp({
   staticRoot,
   adminToken,
   publicWebhookUrl,
-  eventStore = createMemoryEventStore()
+  eventStore = createMemoryEventStore(),
+  idempotencyStore = createIdempotencyStore()
 }) {
   return {
     async handle(request) {
@@ -117,7 +129,7 @@ export function createApp({
           return json({ error: 'Operator API is not configured.' }, { status: 503 });
         }
 
-        if (request.headers.get('authorization') !== `Bearer ${adminToken}`) {
+        if (!isOperatorAuthorized(request.headers.get('authorization'), adminToken)) {
           return json({ error: 'Unauthorized' }, { status: 401 });
         }
 
@@ -133,7 +145,7 @@ export function createApp({
           return json({ error: 'Operator API is not configured.' }, { status: 503 });
         }
 
-        if (request.headers.get('authorization') !== `Bearer ${adminToken}`) {
+        if (!isOperatorAuthorized(request.headers.get('authorization'), adminToken)) {
           return json({ error: 'Unauthorized' }, { status: 401 });
         }
 
@@ -145,12 +157,29 @@ export function createApp({
           return json({ error: 'Operator API is not configured.' }, { status: 503 });
         }
 
-        if (request.headers.get('authorization') !== `Bearer ${adminToken}`) {
+        if (!isOperatorAuthorized(request.headers.get('authorization'), adminToken)) {
           return json({ error: 'Unauthorized' }, { status: 401 });
         }
 
+        const idempotencyKey = request.headers.get('idempotency-key') || '';
+        if (!/^[A-Za-z0-9_-]{8,128}$/.test(idempotencyKey)) {
+          return json(
+            { error: 'A valid Idempotency-Key header is required.' },
+            { status: 400 }
+          );
+        }
+        if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) {
+          return json({ error: 'Content-Type must be application/json.' }, { status: 415 });
+        }
+
+        let payload;
         try {
-          const payload = await request.json();
+          payload = await request.json();
+        } catch {
+          return json({ error: 'Request body must be valid JSON.' }, { status: 400 });
+        }
+
+        try {
           if (!/^\d{8,15}$/.test(payload.to || '')) {
             return json(
               { error: 'A valid recipient is required.' },
@@ -158,7 +187,7 @@ export function createApp({
             );
           }
 
-          let result;
+          let normalizedMessage;
           if (payload.type === 'template') {
             const name = payload.template?.name || '';
             const language = payload.template?.language || 'en_US';
@@ -169,28 +198,38 @@ export function createApp({
               );
             }
 
-            result = await whatsappClient.sendTemplate({
+            normalizedMessage = {
+              type: 'template',
               to: payload.to,
               name,
               language
-            });
+            };
           } else {
-            if (!payload.body?.trim()) {
+            if (typeof payload.body !== 'string' || !payload.body.trim()) {
               return json(
                 { error: 'A non-empty message is required.' },
                 { status: 400 }
               );
             }
 
-            result = await whatsappClient.sendText({
+            normalizedMessage = {
+              type: 'text',
               to: payload.to,
               body: payload.body.trim()
-            });
+            };
           }
+
+          const result = await idempotencyStore.execute({
+            key: idempotencyKey,
+            fingerprint: JSON.stringify(normalizedMessage),
+            operation: () => normalizedMessage.type === 'template'
+              ? whatsappClient.sendTemplate(normalizedMessage)
+              : whatsappClient.sendText(normalizedMessage)
+          });
 
           return json({ sent: true, messageId: result.messageId }, { status: 201 });
         } catch (error) {
-          return json({ error: error.message }, { status: 502 });
+          return json({ error: error.message }, { status: error.status || 502 });
         }
       }
 

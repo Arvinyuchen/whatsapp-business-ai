@@ -10,11 +10,15 @@ import { createWhatsAppWebhook } from './server/whatsapp-webhook.js';
 
 const projectRoot = dirname(fileURLToPath(import.meta.url));
 const graphVersion = process.env.META_GRAPH_API_VERSION || 'v25.0';
+const configuredRequestTimeout = Number.parseInt(process.env.META_REQUEST_TIMEOUT_MS || '', 10);
 const whatsappClient = createWhatsAppClient({
   accessToken: process.env.WHATSAPP_ACCESS_TOKEN,
   phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
   whatsappBusinessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID,
-  graphVersion
+  graphVersion,
+  requestTimeoutMs: Number.isSafeInteger(configuredRequestTimeout) && configuredRequestTimeout > 0
+    ? configuredRequestTimeout
+    : 15_000
 });
 const whatsappWebhook = createWhatsAppWebhook({
   verifyToken: process.env.WHATSAPP_VERIFY_TOKEN,

@@ -35,6 +35,8 @@ npm test
 - Delivery-status webhooks reconciled into matching replies, with failures reopened for review
 - Bounded, deduplicated webhook history persisted across server restarts
 - Visibility-aware live activity refresh with authorization and network recovery
+- Constant-time operator authentication and idempotent outbound message requests
+- Strict operator request validation and restrictive browser security headers
 - Future module navigation for warehouse, logistics, and analytics
 
 Seeded demo conversations remain browser-local. Conversations created from signed WhatsApp webhooks are marked live; their reply action requires loaded operator access and a separate confirmation before the server contacts Meta. Escalate and defer actions remain browser-local.
@@ -57,6 +59,7 @@ Seeded demo conversations remain browser-local. Conversations created from signe
    - `OPERATOR_API_TOKEN` (a private bearer token for operator-only APIs)
    - `PUBLIC_WEBHOOK_URL` (the public HTTPS callback registered with Meta)
    - `WHATSAPP_EVENT_STORE_PATH` (optional local event-history path; defaults to `.data/whatsapp-events.json`)
+   - `META_REQUEST_TIMEOUT_MS` (optional Graph API timeout; defaults to 15000 milliseconds)
 
 3. Start the app with `npm run dev`, then open the URL printed in the terminal. The **Connect WhatsApp** dialog reports any missing values.
 
@@ -82,7 +85,7 @@ The operator token is kept in page memory only. It is cleared when the page relo
 
 - `GET /api/whatsapp/status` — reports configuration readiness without exposing secrets
 - `GET /api/whatsapp/templates` — lists and normalizes Meta message templates; requires `Authorization: Bearer <OPERATOR_API_TOKEN>`
-- `POST /api/whatsapp/messages` — sends text or an approved template through the configured WhatsApp client; requires `Authorization: Bearer <OPERATOR_API_TOKEN>`
+- `POST /api/whatsapp/messages` — sends text or an approved template through the configured WhatsApp client; requires `Authorization: Bearer <OPERATOR_API_TOKEN>` and a unique `Idempotency-Key`
 - `GET /webhooks/whatsapp` — handles Meta's subscription challenge
 - `POST /webhooks/whatsapp` — verifies and normalizes webhook notifications
 - `GET /api/whatsapp/events` — returns recent normalized webhook events; requires `Authorization: Bearer <OPERATOR_API_TOKEN>`

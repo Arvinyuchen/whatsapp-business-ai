@@ -154,3 +154,19 @@ test('client surfaces a safe Meta error when sending fails', async () => {
     /recipient is invalid/i
   );
 });
+
+test('client bounds stalled Meta requests with a safe timeout error', async () => {
+  const client = createWhatsAppClient({
+    accessToken: 'secret-token',
+    phoneNumberId: '123456',
+    requestTimeoutMs: 10,
+    fetchAdapter: async () => {
+      throw Object.assign(new Error('internal timeout detail'), { name: 'TimeoutError' });
+    }
+  });
+
+  await assert.rejects(
+    client.sendText({ to: '61400000000', body: 'Hello' }),
+    /WhatsApp request timed out\. Try again\./i
+  );
+});

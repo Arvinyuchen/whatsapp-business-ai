@@ -221,7 +221,8 @@ test('message route sends through the configured WhatsApp client', async () => {
       method: 'POST',
       headers: {
         authorization: 'Bearer operator-secret',
-        'content-type': 'application/json'
+        'content-type': 'application/json',
+        'idempotency-key': 'message-request-1'
       },
       body: JSON.stringify({ to: '61400000000', body: 'Your order is ready.' })
     }
@@ -232,6 +233,87 @@ test('message route sends through the configured WhatsApp client', async () => {
     sent: true,
     messageId: '61400000000:Your order is ready.'
   });
+});
+
+test('message route reuses an idempotent send result', async () => {
+  let sendCount = 0;
+  const app = createApp({
+    adminToken: 'operator-secret',
+    whatsappClient: {
+      getStatus: () => ({ configured: true, graphVersion: 'v25.0', missing: [] }),
+      sendText: async () => {
+        sendCount += 1;
+        return { messageId: 'wamid.once' };
+      }
+    },
+    whatsappWebhook: { getStatus: () => ({ configured: true, missing: [] }) }
+  });
+  const request = () => new Request('http://localhost/api/whatsapp/messages', {
+    method: 'POST',
+    headers: {
+      authorization: 'Bearer operator-secret',
+      'content-type': 'application/json',
+      'idempotency-key': 'message-request-retry'
+    },
+    body: JSON.stringify({ to: '61400000000', body: 'Only send once.' })
+  });
+
+  const firstResponse = await app.handle(request());
+  const retryResponse = await app.handle(request());
+
+  assert.equal(firstResponse.status, 201);
+  assert.equal(retryResponse.status, 201);
+  assert.deepEqual(await retryResponse.json(), { sent: true, messageId: 'wamid.once' });
+  assert.equal(sendCount, 1);
+});
+
+test('message route requires an idempotency key before sending', async () => {
+  let sendCount = 0;
+  const app = createApp({
+    adminToken: 'operator-secret',
+    whatsappClient: {
+      getStatus: () => ({ configured: true, graphVersion: 'v25.0', missing: [] }),
+      sendText: async () => { sendCount += 1; }
+    },
+    whatsappWebhook: { getStatus: () => ({ configured: true, missing: [] }) }
+  });
+
+  const response = await app.handle(new Request('http://localhost/api/whatsapp/messages', {
+    method: 'POST',
+    headers: {
+      authorization: 'Bearer operator-secret',
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({ to: '61400000000', body: 'Do not send.' })
+  }));
+
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /Idempotency-Key/i);
+  assert.equal(sendCount, 0);
+});
+
+test('message route rejects malformed JSON as a client error', async () => {
+  const app = createApp({
+    adminToken: 'operator-secret',
+    whatsappClient: {
+      getStatus: () => ({ configured: true, graphVersion: 'v25.0', missing: [] }),
+      sendText: async () => assert.fail('send should not run')
+    },
+    whatsappWebhook: { getStatus: () => ({ configured: true, missing: [] }) }
+  });
+
+  const response = await app.handle(new Request('http://localhost/api/whatsapp/messages', {
+    method: 'POST',
+    headers: {
+      authorization: 'Bearer operator-secret',
+      'content-type': 'application/json',
+      'idempotency-key': 'malformed-request'
+    },
+    body: '{'
+  }));
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: 'Request body must be valid JSON.' });
 });
 
 test('message route sends an approved WhatsApp template', async () => {
@@ -252,7 +334,8 @@ test('message route sends an approved WhatsApp template', async () => {
       method: 'POST',
       headers: {
         authorization: 'Bearer operator-secret',
-        'content-type': 'application/json'
+        'content-type': 'application/json',
+        'idempotency-key': 'template-request-1'
       },
       body: JSON.stringify({
         to: '61400000000',
@@ -303,5 +386,7 @@ test('app serves the dashboard from the project root', async () => {
   const response = await app.handle(new Request('http://localhost/'));
 
   assert.equal(response.status, 200);
+  assert.equal(response.headers.get('x-frame-options'), 'DENY');
+  assert.match(response.headers.get('content-security-policy'), /frame-ancestors 'none'/);
   assert.match(await response.text(), /Review what the AI wants to send/i);
 });

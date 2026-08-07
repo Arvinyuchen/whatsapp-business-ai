@@ -2,6 +2,7 @@ export async function sendWhatsAppReply({
   token,
   to,
   body,
+  idempotencyKey = crypto.randomUUID(),
   fetchImpl = fetch
 }) {
   const recipient = String(to || '').trim();
@@ -15,7 +16,8 @@ export async function sendWhatsAppReply({
     method: 'POST',
     headers: {
       authorization: `Bearer ${token}`,
-      'content-type': 'application/json'
+      'content-type': 'application/json',
+      'idempotency-key': idempotencyKey
     },
     body: JSON.stringify({ to: recipient, body: reply })
   });

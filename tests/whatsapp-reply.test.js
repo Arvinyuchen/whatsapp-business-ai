@@ -9,6 +9,7 @@ test('live replies use the authenticated WhatsApp message boundary', async () =>
     token: 'operator-secret',
     to: '8619566373059',
     body: '  Thanks, I can help with that.  ',
+    idempotencyKey: 'reply-request-1',
     fetchImpl: async (...args) => {
       request = args;
       return Response.json({ sent: true, messageId: 'wamid.sent' }, { status: 201 });
@@ -19,6 +20,7 @@ test('live replies use the authenticated WhatsApp message boundary', async () =>
   assert.equal(request[0], '/api/whatsapp/messages');
   assert.equal(request[1].method, 'POST');
   assert.equal(request[1].headers.authorization, 'Bearer operator-secret');
+  assert.equal(request[1].headers['idempotency-key'], 'reply-request-1');
   assert.deepEqual(JSON.parse(request[1].body), {
     to: '8619566373059',
     body: 'Thanks, I can help with that.'

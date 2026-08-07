@@ -2,6 +2,7 @@ import { createConversationStore } from './conversation-store.js';
 import { createActivityRefresh } from './activity-refresh.js';
 import { seedConversations } from './conversations.js';
 import { createLocalStorageAdapter } from './storage.js';
+import { createRequestKeyStore } from './request-key-store.js';
 import { presentWhatsAppEvent, sortWhatsAppEvents } from './whatsapp-activity.js';
 import { sendWhatsAppReply } from './whatsapp-reply.js';
 
@@ -15,6 +16,7 @@ const workflowLabels = {
 const store = createConversationStore(seedConversations, {
   storage: createLocalStorageAdapter('wa-business-ai-demo')
 });
+const requestKeys = createRequestKeyStore();
 
 const uiState = {
   tone: 'helpful',
@@ -535,6 +537,15 @@ async function sendSelectedTemplate() {
     elements.templateRecipient.focus();
     return;
   }
+  const confirmed = window.confirm(
+    `Send the approved ${template.name} template to +${recipient}?`
+  );
+  if (!confirmed) return;
+  const requestScope = 'template-send';
+  const idempotencyKey = requestKeys.get(
+    requestScope,
+    JSON.stringify([recipient, template.name, template.language])
+  );
 
   elements.sendTemplateButton.disabled = true;
   elements.sendTemplateButton.textContent = 'Sending…';
@@ -543,7 +554,8 @@ async function sendSelectedTemplate() {
       method: 'POST',
       headers: {
         authorization: `Bearer ${uiState.operatorToken}`,
-        'content-type': 'application/json'
+        'content-type': 'application/json',
+        'idempotency-key': idempotencyKey
       },
       body: JSON.stringify({
         to: recipient,
@@ -554,6 +566,7 @@ async function sendSelectedTemplate() {
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || 'Template could not be sent.');
 
+    requestKeys.complete(requestScope);
     setTemplateFeedback(`${template.name} accepted by WhatsApp for ${recipient}.`, 'success');
     showToast('Approved template sent to WhatsApp.');
   } catch (error) {
@@ -635,11 +648,17 @@ elements.sendButton.addEventListener('click', async () => {
 
       elements.sendButton.disabled = true;
       elements.sendButtonLabel.textContent = 'Sending live…';
+      const requestScope = `live-reply:${conversation.id}`;
       const result = await sendWhatsAppReply({
         token: uiState.operatorToken,
         to: conversation.sourceId,
-        body: reply
+        body: reply,
+        idempotencyKey: requestKeys.get(
+          requestScope,
+          JSON.stringify([conversation.sourceId, reply])
+        )
       });
+      requestKeys.complete(requestScope);
       store.sendReply(conversation.id, reply, {
         live: true,
         messageId: result.messageId
