@@ -138,3 +138,11 @@ test('workspace bounds raw event history without deleting conversations', async 
   assert.equal(workspace.conversations.length, 1);
   assert.equal(workspace.conversations[0].messages.length, 3);
 });
+
+test('workspace audit records are durable and update by stable ID', async () => {
+  const store = createMemoryWorkspaceStore();
+  await store.recordAudit({ id: 'audit:1', outcome: 'sending' });
+  await store.recordAudit({ id: 'audit:1', outcome: 'sent' });
+
+  assert.deepEqual((await store.getWorkspace()).audits, [{ id: 'audit:1', outcome: 'sent' }]);
+});

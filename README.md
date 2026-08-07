@@ -23,6 +23,7 @@ npm test
 - WhatsApp-style customer inbox
 - AI reply composer with tone presets
 - Optional OpenAI Responses API drafts with a deterministic no-key fallback
+- Governed auto-response worker with dry-run default, recipient allowlist, confidence gate, and durable decisions
 - Intent, urgency, confidence, and order metadata
 - Operator actions to send, escalate, or defer AI replies
 - Queue metrics and automatic advancement after a decision
@@ -66,6 +67,10 @@ Seeded demo conversations remain browser-local. Conversations created from signe
    - `OPENAI_API_KEY` (optional; enables model-generated drafts while remaining operator-reviewed)
    - `OPENAI_MODEL` (optional; defaults to `gpt-5.6-terra` for the balanced drafting role)
    - `OPENAI_REQUEST_TIMEOUT_MS` (optional; defaults to 20000 milliseconds)
+   - `AUTOMATION_MODE` (`dry-run` by default; use `live` only after controlled acceptance)
+   - `AUTOMATION_ALLOWLIST` (comma-separated international phone numbers; required for every evaluated recipient)
+   - `AUTOMATION_MIN_CONFIDENCE` (0–1; defaults to `0.9`)
+   - `AUTOMATION_INTERVAL_MS` (local worker interval; defaults to 5000 milliseconds)
 
 3. Start the app with `npm run dev`, then open the URL printed in the terminal. The **Connect WhatsApp** dialog reports any missing values.
 
@@ -98,6 +103,8 @@ The operator token is copied into page memory only, then removed from the passwo
 - `POST /api/conversations/:id/actions` — persists a live escalation or deferral; requires operator authorization
 - `POST /api/conversations/:id/draft` — generates an operator-reviewed reply draft; uses a local fallback when OpenAI is not configured
 - `GET /api/ai/status` — reports the active draft provider and model without exposing credentials
+- `GET /api/automation` — reports effective automation guards; requires operator authorization
+- `POST /api/automation` — runs one guarded automation pass; requires operator authorization
 - `GET /webhooks/whatsapp` — handles Meta's subscription challenge
 - `POST /webhooks/whatsapp` — verifies and normalizes webhook notifications
 - `GET /api/whatsapp/events` — compatibility endpoint for recent normalized webhook events; requires operator authorization

@@ -21,7 +21,9 @@ test('local reply generator provides a deterministic no-key fallback', async () 
   assert.deepEqual(await generator.generate({ conversation, tone: 'helpful' }), {
     body: 'Thanks. I will check that for you.',
     provider: 'local',
-    model: null
+    model: null,
+    confidence: 0,
+    requiresHuman: true
   });
   assert.deepEqual(createLocalReplyGenerator().getStatus(), generator.getStatus());
 });
@@ -37,7 +39,14 @@ test('OpenAI adapter uses Responses with bounded untrusted transcript data', asy
         model: 'gpt-5.6-terra-2026-08-01',
         output: [{
           type: 'message',
-          content: [{ type: 'output_text', text: 'I can check the blue version for you.' }]
+          content: [{
+            type: 'output_text',
+            text: JSON.stringify({
+              body: 'I can check the blue version for you.',
+              confidence: 0.94,
+              requiresHuman: false
+            })
+          }]
         }]
       });
     }
@@ -51,12 +60,15 @@ test('OpenAI adapter uses Responses with bounded untrusted transcript data', asy
   assert.equal(payload.model, 'gpt-5.6-terra');
   assert.equal(payload.store, false);
   assert.deepEqual(payload.reasoning, { effort: 'none' });
+  assert.equal(payload.text.format.type, 'json_schema');
   assert.match(payload.instructions, /untrusted data/i);
   assert.match(payload.input, /blue version/);
   assert.deepEqual(result, {
     body: 'I can check the blue version for you.',
     provider: 'openai',
-    model: 'gpt-5.6-terra-2026-08-01'
+    model: 'gpt-5.6-terra-2026-08-01',
+    confidence: 0.94,
+    requiresHuman: false
   });
 });
 
@@ -80,5 +92,5 @@ test('OpenAI adapter rejects empty model output', async () => {
     fetchAdapter: async () => Response.json({ output: [] })
   });
 
-  await assert.rejects(generator.generate({ conversation }), /empty draft/i);
+  await assert.rejects(generator.generate({ conversation }), /invalid draft/i);
 });

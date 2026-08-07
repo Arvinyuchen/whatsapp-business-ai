@@ -7,7 +7,15 @@ function clone(value) {
 }
 
 function emptyWorkspace() {
-  return { events: [], conversations: [] };
+  return { events: [], conversations: [], audits: [] };
+}
+
+function normalizeWorkspace(workspace) {
+  return {
+    events: Array.isArray(workspace?.events) ? workspace.events : [],
+    conversations: Array.isArray(workspace?.conversations) ? workspace.conversations : [],
+    audits: Array.isArray(workspace?.audits) ? workspace.audits : []
+  };
 }
 
 function getEventKey(event) {
@@ -224,6 +232,15 @@ function createStoreAdapter({ read, update, eventLimit }) {
     },
     async applyAction(input) {
       return update((workspace) => clone(applyAction(workspace, input)));
+    },
+    async recordAudit(audit) {
+      if (!audit?.id) throw new Error('An audit ID is required.');
+      return update((workspace) => {
+        const index = workspace.audits.findIndex(({ id }) => id === audit.id);
+        if (index === -1) workspace.audits.push(clone(audit));
+        else workspace.audits[index] = clone(audit);
+        return clone(audit);
+      });
     }
   };
 }
@@ -232,8 +249,9 @@ export function createMemoryWorkspaceStore({ eventLimit = 50 } = {}) {
   let workspace = emptyWorkspace();
   return createStoreAdapter({
     eventLimit,
-    read: () => workspace,
+    read: () => normalizeWorkspace(workspace),
     update(mutate) {
+      workspace = normalizeWorkspace(workspace);
       const result = mutate(workspace);
       return clone(result);
     }
@@ -261,7 +279,7 @@ export function createSqliteWorkspaceStore({ filePath, eventLimit = 50 } = {}) {
 
   function read() {
     const row = selectState.get();
-    return row ? JSON.parse(row.payload) : emptyWorkspace();
+    return row ? normalizeWorkspace(JSON.parse(row.payload)) : emptyWorkspace();
   }
 
   function update(mutate) {

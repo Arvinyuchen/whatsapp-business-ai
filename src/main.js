@@ -29,6 +29,7 @@ const uiState = {
   operatorToken: '',
   templates: [],
   events: [],
+  audits: [],
   activityLoading: false,
   sendConfirmResolve: null,
   toastTimer: null
@@ -382,7 +383,22 @@ function setActivityFeedback(message, tone = 'neutral') {
 }
 
 function renderWhatsAppActivity() {
-  const events = sortWhatsAppEvents(uiState.events).map((event) => presentWhatsAppEvent(event));
+  const auditMarkers = { sent: '✓', dry_run: '∙', blocked: '!', failed: '×', sending: '↑' };
+  const audits = [...uiState.audits]
+    .sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp))
+    .map((audit) => ({
+      kind: audit.outcome === 'failed' ? 'failed' : 'status',
+      marker: auditMarkers[audit.outcome] || '∙',
+      label: `Automation ${String(audit.outcome || 'decision').replace('_', ' ')}`,
+      subject: audit.recipient ? `+${audit.recipient}` : audit.conversationId,
+      detail: `${String(audit.reason || 'evaluated').replaceAll('_', ' ')}${Number.isFinite(audit.confidence) ? ` · ${Math.round(audit.confidence * 100)}% confidence` : ''}`,
+      id: audit.id,
+      timestamp: audit.timestamp ? new Date(audit.timestamp).toLocaleString() : 'Recently'
+    }));
+  const events = [
+    ...audits,
+    ...sortWhatsAppEvents(uiState.events).map((event) => presentWhatsAppEvent(event))
+  ];
   if (!events.length) {
     elements.activityLedger.innerHTML = `
       <div class="activity-empty">
@@ -430,6 +446,7 @@ async function loadWhatsAppActivity({ useEnteredToken = false, silent = false } 
     const payload = await loadLiveWorkspace({ token });
 
     uiState.events = payload.events;
+    uiState.audits = payload.audits || [];
     const selectedBeforeSync = store.getSnapshot().selectedId;
     const syncResult = store.syncLiveConversations(payload.conversations);
     const selectedAfterSync = store.getSnapshot().selectedId;
@@ -439,13 +456,14 @@ async function loadWhatsAppActivity({ useEnteredToken = false, silent = false } 
     renderWhatsAppActivity();
     setActivityFeedback(
       payload.events.length
-        ? `${payload.events.length} recent ${payload.events.length === 1 ? 'event' : 'events'} from signed webhooks · ${payload.conversations.length} shared live ${payload.conversations.length === 1 ? 'conversation' : 'conversations'} · Auto-refresh active.`
+        ? `${payload.events.length} recent ${payload.events.length === 1 ? 'event' : 'events'} from signed webhooks · ${payload.conversations.length} shared live ${payload.conversations.length === 1 ? 'conversation' : 'conversations'} · ${uiState.audits.length} automation ${uiState.audits.length === 1 ? 'decision' : 'decisions'} · Auto-refresh active.`
         : 'Webhook connection is ready. No events have arrived yet · Auto-refresh active.',
       'success'
     );
     return true;
   } catch (error) {
     uiState.events = [];
+    uiState.audits = [];
     elements.activityLedger.innerHTML = '';
     if (error.status === 401) {
       uiState.operatorToken = '';

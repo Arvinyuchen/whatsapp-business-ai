@@ -20,6 +20,14 @@
 - AI generation only drafts text. It never sends to WhatsApp, and the normal recipient/message confirmation remains mandatory.
 - Without `OPENAI_API_KEY`, Rewrite uses the deterministic local fallback. With a key, the server uses the Responses API and does not store the response at OpenAI (`store: false`).
 
+## Automation safety
+
+- `AUTOMATION_MODE` defaults to `dry-run`; this evaluates and records decisions but never contacts a customer.
+- `live` mode is still denied unless the recipient appears in `AUTOMATION_ALLOWLIST`, the draft reaches `AUTOMATION_MIN_CONFIDENCE`, and the draft does not require human review.
+- The no-key local fallback always requires human review, so it cannot auto-send.
+- Each inbound message gets one durable automation decision. A failed or ambiguous send is not automatically retried, preventing duplicate customer messages.
+- Review automation decisions in the live activity ledger before changing from `dry-run` to `live`.
+
 ## Webhooks and recovery
 
 - Expose only `/webhooks/whatsapp` through the public HTTPS tunnel or reverse proxy.

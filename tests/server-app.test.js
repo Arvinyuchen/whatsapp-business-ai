@@ -334,6 +334,46 @@ test('AI status reports local fallback without exposing API credentials', async 
   assert.deepEqual(await response.json(), { configured: false, provider: 'local', model: null });
 });
 
+test('webhook additions kick the automation worker and operator can inspect its mode', async () => {
+  let kicks = 0;
+  let runs = 0;
+  const automationEngine = {
+    getStatus: () => ({ mode: 'dry-run', allowlistSize: 1, minConfidence: 0.9 }),
+    kick: () => { kicks += 1; },
+    run: async () => {
+      runs += 1;
+      return [{ id: 'automation:1', outcome: 'dry_run' }];
+    }
+  };
+  const app = createApp({
+    adminToken: 'operator-secret',
+    automationEngine,
+    whatsappClient: { getStatus: () => ({ configured: true, graphVersion: 'v25.0', missing: [] }) },
+    whatsappWebhook: {
+      getStatus: () => ({ configured: true, missing: [] }),
+      receive: () => ({ accepted: true, events: [{
+        type: 'message.received', messageId: 'wamid.auto', from: '8619566373059', text: 'Hello'
+      }] })
+    }
+  });
+
+  await app.handle(new Request('http://localhost/webhooks/whatsapp', { method: 'POST', body: '{}' }));
+  const statusResponse = await app.handle(new Request('http://localhost/api/automation', {
+    headers: { authorization: 'Bearer operator-secret' }
+  }));
+  const runResponse = await app.handle(new Request('http://localhost/api/automation', {
+    method: 'POST',
+    headers: { authorization: 'Bearer operator-secret' }
+  }));
+
+  assert.equal(kicks, 1);
+  assert.equal(runs, 1);
+  assert.deepEqual(await statusResponse.json(), {
+    mode: 'dry-run', allowlistSize: 1, minConfidence: 0.9
+  });
+  assert.equal((await runResponse.json()).decisions[0].outcome, 'dry_run');
+});
+
 test('operator can list WhatsApp message templates', async () => {
   const templates = [
     {

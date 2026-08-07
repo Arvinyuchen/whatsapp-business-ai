@@ -73,6 +73,11 @@ export function createApp({
   publicWebhookUrl,
   workspaceStore = createMemoryWorkspaceStore(),
   replyGenerator = createLocalReplyGenerator(),
+  automationEngine = {
+    getStatus: () => ({ mode: 'off', allowlistSize: 0, minConfidence: 1 }),
+    kick() {},
+    run: async () => []
+  },
   idempotencyStore = createIdempotencyStore()
 }) {
   return {
@@ -119,6 +124,7 @@ export function createApp({
         }
 
         const stored = await workspaceStore.applyEvents(result.events);
+        if (stored.added) automationEngine.kick();
         return json({
           received: true,
           eventCount: stored.added,
@@ -175,6 +181,18 @@ export function createApp({
           return json({ error: 'Unauthorized' }, { status: 401 });
         }
         return json(replyGenerator.getStatus());
+      }
+
+      if (['GET', 'POST'].includes(request.method) && url.pathname === '/api/automation') {
+        if (!adminToken) {
+          return json({ error: 'Operator API is not configured.' }, { status: 503 });
+        }
+        if (!isOperatorAuthorized(request.headers.get('authorization'), adminToken)) {
+          return json({ error: 'Unauthorized' }, { status: 401 });
+        }
+        if (request.method === 'GET') return json(automationEngine.getStatus());
+        const decisions = await automationEngine.run();
+        return json({ decisions });
       }
 
       const conversationDraftMatch = url.pathname.match(/^\/api\/conversations\/([^/]+)\/draft$/);

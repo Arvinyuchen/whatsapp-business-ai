@@ -4,6 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createApp } from './server/app.js';
+import { createAutomationEngine } from './server/automation-engine.js';
 import { createSqliteWorkspaceStore } from './server/workspace-store.js';
 import { createNodeHandler } from './server/node-adapter.js';
 import { createReplyGenerator } from './server/reply-generator.js';
@@ -58,12 +59,29 @@ if (!existingWorkspace.events.length) {
     }
   }
 }
+const configuredAutomationConfidence = Number.parseFloat(
+  process.env.AUTOMATION_MIN_CONFIDENCE || ''
+);
+const automationEngine = createAutomationEngine({
+  mode: process.env.AUTOMATION_MODE || 'dry-run',
+  allowlist: (process.env.AUTOMATION_ALLOWLIST || '')
+    .split(',')
+    .map((value) => value.replace(/\D/g, ''))
+    .filter(Boolean),
+  minConfidence: Number.isFinite(configuredAutomationConfidence)
+    ? configuredAutomationConfidence
+    : 0.9,
+  replyGenerator,
+  whatsappClient,
+  workspaceStore
+});
 const app = createApp({
   whatsappClient,
   whatsappWebhook,
   staticRoot: projectRoot,
   adminToken: process.env.OPERATOR_API_TOKEN,
   publicWebhookUrl: process.env.PUBLIC_WEBHOOK_URL,
+  automationEngine,
   replyGenerator,
   workspaceStore
 });
@@ -73,4 +91,16 @@ const host = process.env.HOST || '127.0.0.1';
 
 server.listen(port, host, () => {
   console.log(`WhatsApp Business AI running at http://${host}:${port}`);
+  automationEngine.kick();
 });
+const configuredAutomationInterval = Number.parseInt(
+  process.env.AUTOMATION_INTERVAL_MS || '',
+  10
+);
+const automationTimer = setInterval(
+  () => automationEngine.kick(),
+  Number.isSafeInteger(configuredAutomationInterval) && configuredAutomationInterval >= 1_000
+    ? configuredAutomationInterval
+    : 5_000
+);
+automationTimer.unref();
