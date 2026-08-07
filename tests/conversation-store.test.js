@@ -41,6 +41,19 @@ test('operator can send a non-empty reply and resolve the conversation', () => {
   assert.equal(conversation.activity.at(-1).type, 'sent');
 });
 
+test('accepted live replies retain the Meta message ID', () => {
+  const store = createConversationStore([makeConversation({ source: 'whatsapp' })]);
+
+  store.sendReply('ava', 'Your order is ready.', {
+    live: true,
+    messageId: 'wamid.sent'
+  });
+
+  const activity = store.getSnapshot().conversations[0].activity.at(-1);
+  assert.equal(activity.label, 'Live reply accepted by WhatsApp');
+  assert.equal(activity.messageId, 'wamid.sent');
+});
+
 test('operator cannot send a blank reply', () => {
   const store = createConversationStore([makeConversation()]);
 
@@ -137,4 +150,96 @@ test('deferred conversations leave the active queue and the operator advances', 
   const snapshot = store.getSnapshot();
   assert.equal(snapshot.selectedId, 'second');
   assert.deepEqual(snapshot.visibleConversations.map(({ id }) => id), ['second']);
+});
+
+test('inbound WhatsApp events create live inbox conversations', () => {
+  const store = createConversationStore([makeConversation({ workflow: 'open' })]);
+
+  const result = store.ingestWhatsAppEvents([{
+    type: 'message.received',
+    messageId: 'wamid.first',
+    from: '8619566373059',
+    contactName: 'New test number',
+    text: 'Can you help with an order?'
+  }]);
+
+  const conversation = store.getSnapshot().conversations[0];
+  assert.deepEqual(result, { created: 1, updated: 0, ignored: 0 });
+  assert.equal(conversation.id, 'whatsapp:8619566373059');
+  assert.equal(conversation.name, 'New test number');
+  assert.equal(conversation.workflow, 'open');
+  assert.deepEqual(conversation.messages, [['customer', 'Can you help with an order?']]);
+});
+
+test('new messages reopen and move an existing WhatsApp conversation to the top', () => {
+  const store = createConversationStore([
+    makeConversation({ id: 'other', workflow: 'open' })
+  ]);
+  store.ingestWhatsAppEvents([{
+    type: 'message.received',
+    messageId: 'wamid.first',
+    from: '8619566373059',
+    contactName: 'New test number',
+    text: 'First message'
+  }]);
+  store.sendReply('whatsapp:8619566373059', 'First reply');
+
+  const result = store.ingestWhatsAppEvents([{
+    type: 'message.received',
+    messageId: 'wamid.second',
+    from: '8619566373059',
+    contactName: 'Updated name',
+    text: 'Follow-up message'
+  }]);
+
+  const conversation = store.getSnapshot().conversations[0];
+  assert.deepEqual(result, { created: 0, updated: 1, ignored: 0 });
+  assert.equal(conversation.id, 'whatsapp:8619566373059');
+  assert.equal(conversation.name, 'Updated name');
+  assert.equal(conversation.workflow, 'open');
+  assert.deepEqual(conversation.messages.at(-1), ['customer', 'Follow-up message']);
+});
+
+test('replayed WhatsApp events are ignored and remain deduplicated after reload', () => {
+  const storage = createMemoryStorage();
+  const event = {
+    type: 'message.received',
+    messageId: 'wamid.duplicate',
+    from: '8619566373059',
+    text: 'Only store this once'
+  };
+  const firstStore = createConversationStore([], { storage });
+  firstStore.ingestWhatsAppEvents([event]);
+  const reloadedStore = createConversationStore([], { storage });
+
+  const result = reloadedStore.ingestWhatsAppEvents([event]);
+  const conversation = reloadedStore.getSnapshot().conversations[0];
+
+  assert.deepEqual(result, { created: 0, updated: 0, ignored: 1 });
+  assert.equal(conversation.messages.length, 1);
+});
+
+test('inbound event batches become chronological conversation transcripts', () => {
+  const store = createConversationStore([]);
+
+  store.ingestWhatsAppEvents([{
+    type: 'message.received',
+    messageId: 'wamid.newer',
+    from: '8619566373059',
+    text: 'Second message',
+    timestamp: '200'
+  }, {
+    type: 'message.received',
+    messageId: 'wamid.older',
+    from: '8619566373059',
+    text: 'First message',
+    timestamp: '100'
+  }]);
+
+  const conversation = store.getSnapshot().conversations[0];
+  assert.deepEqual(conversation.messages, [
+    ['customer', 'First message'],
+    ['customer', 'Second message']
+  ]);
+  assert.equal(conversation.preview, 'Second message');
 });

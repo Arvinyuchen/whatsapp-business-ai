@@ -2,6 +2,7 @@ import { createConversationStore } from './conversation-store.js';
 import { seedConversations } from './conversations.js';
 import { createLocalStorageAdapter } from './storage.js';
 import { presentWhatsAppEvent, sortWhatsAppEvents } from './whatsapp-activity.js';
+import { sendWhatsAppReply } from './whatsapp-reply.js';
 
 const workflowLabels = {
   open: 'Open',
@@ -231,7 +232,11 @@ function renderConversation(conversation, { refreshDraft }) {
   elements.chatName.textContent = conversation.name;
   elements.chatIntent.textContent = conversation.intent;
   elements.chatConfidence.textContent = `${conversation.confidence}%`;
-  elements.sendButtonLabel.textContent = conversation.workflow === 'needs_review' ? 'Approve & send' : 'Send reply';
+  elements.sendButtonLabel.textContent = conversation.source === 'whatsapp'
+    ? 'Review & send live'
+    : conversation.workflow === 'needs_review'
+      ? 'Approve & send'
+      : 'Send reply';
   elements.escalateButton.disabled = conversation.workflow === 'needs_review';
   elements.escalateButton.textContent = conversation.workflow === 'needs_review' ? 'Escalated' : 'Escalate';
   renderMessages(conversation);
@@ -387,10 +392,17 @@ async function loadWhatsAppActivity({ useEnteredToken = false } = {}) {
     if (!response.ok) throw new Error(payload.error || 'Unable to load WhatsApp activity.');
 
     uiState.events = payload.events;
+    const selectedBeforeSync = store.getSnapshot().selectedId;
+    const syncResult = store.ingestWhatsAppEvents(payload.events);
+    const selectedAfterSync = store.getSnapshot().selectedId;
+    if (syncResult.created || syncResult.updated) {
+      render({ refreshDraft: selectedBeforeSync !== selectedAfterSync });
+    }
     renderWhatsAppActivity();
+    const syncedCount = syncResult.created + syncResult.updated;
     setActivityFeedback(
       payload.events.length
-        ? `${payload.events.length} recent ${payload.events.length === 1 ? 'event' : 'events'} from signed webhooks.`
+        ? `${payload.events.length} recent ${payload.events.length === 1 ? 'event' : 'events'} from signed webhooks${syncedCount ? ` · ${syncedCount} synced to the inbox` : ''}.`
         : 'Webhook connection is ready. No events have arrived yet.',
       'success'
     );
@@ -574,18 +586,60 @@ elements.rewriteButton.addEventListener('click', () => {
   elements.replyDraft.focus();
 });
 
-elements.sendButton.addEventListener('click', () => {
+elements.sendButton.addEventListener('click', async () => {
   const conversation = store.getSnapshot().selectedConversation;
   if (!conversation) return;
+  const reply = elements.replyDraft.value.trim();
 
   try {
-    store.sendReply(conversation.id, elements.replyDraft.value);
-    showToast(`Reply sent to ${conversation.name}.`);
+    if (!reply) throw new Error('Reply cannot be empty.');
+
+    if (conversation.source === 'whatsapp') {
+      if (!uiState.operatorToken) {
+        elements.replyError.textContent = 'Load the live workspace before sending a WhatsApp reply.';
+        elements.replyDraft.setAttribute('aria-invalid', 'true');
+        elements.connectionDialog.showModal();
+        elements.operatorToken.focus();
+        return;
+      }
+
+      const confirmed = window.confirm(
+        `Send this live WhatsApp reply to ${conversation.name} (+${conversation.sourceId})?\n\n${reply}`
+      );
+      if (!confirmed) return;
+
+      elements.sendButton.disabled = true;
+      elements.sendButtonLabel.textContent = 'Sending live…';
+      const result = await sendWhatsAppReply({
+        token: uiState.operatorToken,
+        to: conversation.sourceId,
+        body: reply
+      });
+      store.sendReply(conversation.id, reply, {
+        live: true,
+        messageId: result.messageId
+      });
+      showToast(`Live reply accepted by WhatsApp for ${conversation.name}.`);
+    } else {
+      store.sendReply(conversation.id, reply);
+      showToast(`Demo reply saved for ${conversation.name}.`);
+    }
+
     render();
   } catch (error) {
     elements.replyError.textContent = error.message;
     elements.replyDraft.setAttribute('aria-invalid', 'true');
     elements.replyDraft.focus();
+  } finally {
+    elements.sendButton.disabled = false;
+    const selectedConversation = store.getSnapshot().selectedConversation;
+    if (selectedConversation) {
+      elements.sendButtonLabel.textContent = selectedConversation.source === 'whatsapp'
+        ? 'Review & send live'
+        : selectedConversation.workflow === 'needs_review'
+          ? 'Approve & send'
+          : 'Send reply';
+    }
   }
 });
 
