@@ -7,6 +7,7 @@ import { createApp } from './server/app.js';
 import { createAutomationEngine } from './server/automation-engine.js';
 import { createSqliteWorkspaceStore } from './server/workspace-store.js';
 import { createNodeHandler } from './server/node-adapter.js';
+import { createOperatorAccess, parseOperatorAccounts } from './server/operator-security.js';
 import { createReplyGenerator } from './server/reply-generator.js';
 import { createWhatsAppClient } from './server/whatsapp-client.js';
 import { createWhatsAppWebhook } from './server/whatsapp-webhook.js';
@@ -75,11 +76,15 @@ const automationEngine = createAutomationEngine({
   whatsappClient,
   workspaceStore
 });
+const operatorAccess = createOperatorAccess({
+  accounts: parseOperatorAccounts(process.env.OPERATOR_ACCOUNTS_JSON),
+  legacyAdminToken: process.env.OPERATOR_API_TOKEN
+});
 const app = createApp({
   whatsappClient,
   whatsappWebhook,
   staticRoot: projectRoot,
-  adminToken: process.env.OPERATOR_API_TOKEN,
+  operatorAccess,
   publicWebhookUrl: process.env.PUBLIC_WEBHOOK_URL,
   automationEngine,
   replyGenerator,

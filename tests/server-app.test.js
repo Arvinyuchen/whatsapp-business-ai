@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 import { createApp } from '../server/app.js';
+import { createOperatorAccess } from '../server/operator-security.js';
 import { createMemoryWorkspaceStore } from '../server/workspace-store.js';
 
 const projectRoot = fileURLToPath(new URL('..', import.meta.url));
@@ -197,6 +198,7 @@ test('operator workspace exposes the shared live conversation projection', async
   assert.equal(response.status, 200);
   assert.equal(workspace.events.length, 1);
   assert.equal(workspace.conversations[0].id, 'whatsapp:8619566373059');
+  assert.deepEqual(workspace.operator, { id: 'legacy-admin', role: 'admin' });
 });
 
 test('live reply is recorded once in the shared workspace with an idempotent retry', async () => {
@@ -246,6 +248,7 @@ test('live reply is recorded once in the shared workspace with an idempotent ret
   assert.deepEqual(retryPayload, firstPayload);
   assert.equal(sendCount, 1);
   assert.equal(workspace.conversations[0].messages.filter(([sender]) => sender === 'agent').length, 1);
+  assert.deepEqual(workspace.audits[0].actor, { id: 'legacy-admin', role: 'admin' });
 });
 
 test('operator actions update live conversations on the server', async () => {
@@ -372,6 +375,49 @@ test('webhook additions kick the automation worker and operator can inspect its 
     mode: 'dry-run', allowlistSize: 1, minConfidence: 0.9
   });
   assert.equal((await runResponse.json()).decisions[0].outcome, 'dry_run');
+});
+
+test('multi-operator roles separate read, reply, and admin permissions', async () => {
+  const operatorAccess = createOperatorAccess({ accounts: [
+    { id: 'reader', role: 'viewer', token: 'viewer-secret-token' },
+    { id: 'casey', role: 'agent', token: 'agent-secret-token' },
+    { id: 'arvin', role: 'admin', token: 'admin-secret-token' }
+  ] });
+  const app = createApp({
+    operatorAccess,
+    whatsappClient: {
+      getStatus: () => ({ configured: true, graphVersion: 'v25.0', missing: [] }),
+      sendText: async () => ({ messageId: 'wamid.role' })
+    },
+    whatsappWebhook: { getStatus: () => ({ configured: true, missing: [] }) }
+  });
+  const bearer = (token) => ({ authorization: `Bearer ${token}` });
+
+  const viewerRead = await app.handle(new Request('http://localhost/api/workspace', {
+    headers: bearer('viewer-secret-token')
+  }));
+  const viewerSend = await app.handle(new Request('http://localhost/api/whatsapp/messages', {
+    method: 'POST',
+    headers: {
+      ...bearer('viewer-secret-token'),
+      'content-type': 'application/json',
+      'idempotency-key': 'viewer-send-denied'
+    },
+    body: JSON.stringify({ to: '8619566373059', body: 'Must not send.' })
+  }));
+  const agentAutomation = await app.handle(new Request('http://localhost/api/automation', {
+    method: 'POST',
+    headers: bearer('agent-secret-token')
+  }));
+  const adminAutomation = await app.handle(new Request('http://localhost/api/automation', {
+    method: 'POST',
+    headers: bearer('admin-secret-token')
+  }));
+
+  assert.equal(viewerRead.status, 200);
+  assert.equal(viewerSend.status, 403);
+  assert.equal(agentAutomation.status, 403);
+  assert.equal(adminAutomation.status, 200);
 });
 
 test('operator can list WhatsApp message templates', async () => {

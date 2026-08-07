@@ -39,6 +39,7 @@ npm test
 - Bounded, deduplicated webhook history and live conversation state persisted across server restarts
 - Visibility-aware live activity refresh with authorization and network recovery
 - Constant-time operator authentication and idempotent outbound message requests
+- Local viewer, agent, and admin roles with durable actor attribution
 - Strict operator request validation and restrictive browser security headers
 - Future module navigation for warehouse, logistics, and analytics
 
@@ -60,6 +61,7 @@ Seeded demo conversations remain browser-local. Conversations created from signe
    - `WHATSAPP_VERIFY_TOKEN` (a secret value you choose and also enter in Meta)
    - `META_APP_SECRET`
    - `OPERATOR_API_TOKEN` (a private bearer token for operator-only APIs)
+   - `OPERATOR_ACCOUNTS_JSON` (optional array of named `viewer`, `agent`, and `admin` accounts; supersedes the single-token workflow)
    - `PUBLIC_WEBHOOK_URL` (the public HTTPS callback registered with Meta)
    - `WORKSPACE_DB_PATH` (optional shared local SQLite path; defaults to `.data/workspace.sqlite`)
    - `WHATSAPP_EVENT_STORE_PATH` (optional one-time migration source for older event history)
@@ -92,7 +94,7 @@ Never commit `.env` or production credentials. The Graph API version defaults to
 
 Meta reviews custom templates asynchronously. Open **Connect WhatsApp**, find the **Template desk**, enter your `OPERATOR_API_TOKEN`, and choose **Load templates**. The approval ledger reports each template as `APPROVED`, `PENDING`, or `REJECTED`; only approved templates are offered by the send form.
 
-The operator token is copied into page memory only, then removed from the password field. It is cleared when the page reloads and is never bundled into browser code or saved to browser storage. The same operator session loads the template desk and the recent signed-webhook activity ledger.
+The assigned operator token is copied into page memory only, then removed from the password field. It is cleared when the page reloads and is never bundled into browser code or saved to browser storage. The workspace shows the authenticated operator ID and role. Viewer accounts can inspect, agents can draft/reply/manage, and admins can additionally run automation manually. `OPERATOR_API_TOKEN` remains a legacy admin identity when configured.
 
 ### Local API boundaries
 
@@ -103,6 +105,7 @@ The operator token is copied into page memory only, then removed from the passwo
 - `POST /api/conversations/:id/actions` — persists a live escalation or deferral; requires operator authorization
 - `POST /api/conversations/:id/draft` — generates an operator-reviewed reply draft; uses a local fallback when OpenAI is not configured
 - `GET /api/ai/status` — reports the active draft provider and model without exposing credentials
+- `GET /api/session` — reports the authenticated operator ID and role without exposing token material
 - `GET /api/automation` — reports effective automation guards; requires operator authorization
 - `POST /api/automation` — runs one guarded automation pass; requires operator authorization
 - `GET /webhooks/whatsapp` — handles Meta's subscription challenge

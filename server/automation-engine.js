@@ -13,6 +13,7 @@ function baseAudit({ conversation, inboundMessageId, now }) {
     conversationId: conversation.id,
     inboundMessageId,
     recipient: conversation.sourceId,
+    actor: { id: 'automation', role: 'system' },
     timestamp: now().toISOString()
   };
 }

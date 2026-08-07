@@ -27,6 +27,7 @@ const uiState = {
   tone: 'helpful',
   stockCheck: true,
   operatorToken: '',
+  operator: null,
   templates: [],
   events: [],
   audits: [],
@@ -386,15 +387,24 @@ function renderWhatsAppActivity() {
   const auditMarkers = { sent: '✓', dry_run: '∙', blocked: '!', failed: '×', sending: '↑' };
   const audits = [...uiState.audits]
     .sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp))
-    .map((audit) => ({
-      kind: audit.outcome === 'failed' ? 'failed' : 'status',
-      marker: auditMarkers[audit.outcome] || '∙',
-      label: `Automation ${String(audit.outcome || 'decision').replace('_', ' ')}`,
-      subject: audit.recipient ? `+${audit.recipient}` : audit.conversationId,
-      detail: `${String(audit.reason || 'evaluated').replaceAll('_', ' ')}${Number.isFinite(audit.confidence) ? ` · ${Math.round(audit.confidence * 100)}% confidence` : ''}`,
-      id: audit.id,
-      timestamp: audit.timestamp ? new Date(audit.timestamp).toLocaleString() : 'Recently'
-    }));
+    .map((audit) => {
+      const operatorAction = audit.type?.startsWith('operator.');
+      return {
+        kind: audit.outcome === 'failed' ? 'failed' : 'status',
+        marker: operatorAction ? '●' : auditMarkers[audit.outcome] || '∙',
+        label: operatorAction
+          ? String(audit.type).replace('operator.', 'Operator ')
+          : `Automation ${String(audit.outcome || 'decision').replace('_', ' ')}`,
+        subject: operatorAction
+          ? `${audit.actor?.id || 'operator'} · ${audit.actor?.role || 'unknown role'}`
+          : audit.recipient ? `+${audit.recipient}` : audit.conversationId,
+        detail: operatorAction
+          ? String(audit.action || audit.messageType || audit.provider || 'completed').replaceAll('_', ' ')
+          : `${String(audit.reason || 'evaluated').replaceAll('_', ' ')}${Number.isFinite(audit.confidence) ? ` · ${Math.round(audit.confidence * 100)}% confidence` : ''}`,
+        id: audit.id,
+        timestamp: audit.timestamp ? new Date(audit.timestamp).toLocaleString() : 'Recently'
+      };
+    });
   const events = [
     ...audits,
     ...sortWhatsAppEvents(uiState.events).map((event) => presentWhatsAppEvent(event))
@@ -447,6 +457,7 @@ async function loadWhatsAppActivity({ useEnteredToken = false, silent = false } 
 
     uiState.events = payload.events;
     uiState.audits = payload.audits || [];
+    uiState.operator = payload.operator || null;
     const selectedBeforeSync = store.getSnapshot().selectedId;
     const syncResult = store.syncLiveConversations(payload.conversations);
     const selectedAfterSync = store.getSnapshot().selectedId;
@@ -456,7 +467,7 @@ async function loadWhatsAppActivity({ useEnteredToken = false, silent = false } 
     renderWhatsAppActivity();
     setActivityFeedback(
       payload.events.length
-        ? `${payload.events.length} recent ${payload.events.length === 1 ? 'event' : 'events'} from signed webhooks · ${payload.conversations.length} shared live ${payload.conversations.length === 1 ? 'conversation' : 'conversations'} · ${uiState.audits.length} automation ${uiState.audits.length === 1 ? 'decision' : 'decisions'} · Auto-refresh active.`
+        ? `${uiState.operator ? `${uiState.operator.id} · ${uiState.operator.role} · ` : ''}${payload.events.length} recent ${payload.events.length === 1 ? 'event' : 'events'} from signed webhooks · ${payload.conversations.length} shared live ${payload.conversations.length === 1 ? 'conversation' : 'conversations'} · ${uiState.audits.length} audit ${uiState.audits.length === 1 ? 'record' : 'records'} · Auto-refresh active.`
         : 'Webhook connection is ready. No events have arrived yet · Auto-refresh active.',
       'success'
     );
@@ -467,6 +478,7 @@ async function loadWhatsAppActivity({ useEnteredToken = false, silent = false } 
     elements.activityLedger.innerHTML = '';
     if (error.status === 401) {
       uiState.operatorToken = '';
+      uiState.operator = null;
       activityRefresh.stop();
       elements.refreshTemplatesButton.disabled = true;
       setTemplateFeedback('Operator access expired. Load the workspace again.', 'warning');

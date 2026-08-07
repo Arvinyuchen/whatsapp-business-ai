@@ -146,3 +146,23 @@ test('workspace audit records are durable and update by stable ID', async () => 
 
   assert.deepEqual((await store.getWorkspace()).audits, [{ id: 'audit:1', outcome: 'sent' }]);
 });
+
+test('operator identity is attributed to replies and conversation actions', async () => {
+  const store = createMemoryWorkspaceStore();
+  const actor = { id: 'casey', role: 'agent' };
+  await store.applyEvents([inboundEvent]);
+  await store.applyAction({
+    conversationId: 'whatsapp:8619566373059', action: 'escalate', actor
+  });
+  await store.recordReply({
+    conversationId: 'whatsapp:8619566373059',
+    to: '8619566373059',
+    body: 'I can help.',
+    messageId: 'wamid.attributed',
+    actor
+  });
+
+  const workspace = await store.getWorkspace();
+  assert.deepEqual(workspace.conversations[0].activity.at(-1).actor, actor);
+  assert.deepEqual(workspace.audits.map(({ actor: auditActor }) => auditActor), [actor, actor]);
+});

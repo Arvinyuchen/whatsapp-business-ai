@@ -1,4 +1,5 @@
 import { mkdirSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -180,7 +181,7 @@ function addEvents(workspace, incomingEvents, limit) {
   return { added: addedEvents.length, duplicates, conversationsChanged };
 }
 
-function recordReply(workspace, { conversationId, to, body, messageId }) {
+function recordReply(workspace, { conversationId, to, body, messageId, actor }) {
   const reply = String(body || '').trim();
   if (!reply) throw new Error('Reply cannot be empty.');
   const conversation = workspace.conversations.find(({ id }) => id === conversationId);
@@ -197,24 +198,50 @@ function recordReply(workspace, { conversationId, to, body, messageId }) {
   conversation.activity.push({
     type: 'sent',
     label: 'Live reply accepted by WhatsApp',
+    ...(actor ? { actor } : {}),
     ...(messageId ? { messageId } : {})
   });
+  if (actor) {
+    workspace.audits.push({
+      id: `operator:reply:${messageId}`,
+      type: 'operator.reply',
+      conversationId,
+      recipient: to,
+      messageId,
+      actor,
+      timestamp: new Date().toISOString()
+    });
+  }
   return conversation;
 }
 
-function applyAction(workspace, { conversationId, action }) {
+function applyAction(workspace, { conversationId, action, actor }) {
   const conversation = workspace.conversations.find(({ id }) => id === conversationId);
   if (!conversation) throw Object.assign(new Error('Live conversation not found.'), { status: 404 });
 
   conversation.activity ??= [];
   if (action === 'escalate') {
     conversation.workflow = 'needs_review';
-    conversation.activity.push({ type: 'escalated', label: 'Escalated to a specialist' });
+    conversation.activity.push({
+      type: 'escalated', label: 'Escalated to a specialist', ...(actor ? { actor } : {})
+    });
   } else if (action === 'defer') {
     conversation.workflow = 'deferred';
-    conversation.activity.push({ type: 'deferred', label: 'Follow-up queued for later today' });
+    conversation.activity.push({
+      type: 'deferred', label: 'Follow-up queued for later today', ...(actor ? { actor } : {})
+    });
   } else {
     throw Object.assign(new Error('Unsupported conversation action.'), { status: 400 });
+  }
+  if (actor) {
+    workspace.audits.push({
+      id: `operator:action:${randomUUID()}`,
+      type: 'operator.action',
+      conversationId,
+      action,
+      actor,
+      timestamp: new Date().toISOString()
+    });
   }
   return conversation;
 }

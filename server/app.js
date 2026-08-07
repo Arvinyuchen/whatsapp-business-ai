@@ -1,8 +1,9 @@
 import { readFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { extname, resolve, sep } from 'node:path';
 
 import { createMemoryWorkspaceStore } from './workspace-store.js';
-import { createIdempotencyStore, isOperatorAuthorized } from './operator-security.js';
+import { createIdempotencyStore, createOperatorAccess } from './operator-security.js';
 import { createLocalReplyGenerator } from './reply-generator.js';
 
 const securityHeaders = {
@@ -70,6 +71,7 @@ export function createApp({
   whatsappWebhook,
   staticRoot,
   adminToken,
+  operatorAccess,
   publicWebhookUrl,
   workspaceStore = createMemoryWorkspaceStore(),
   replyGenerator = createLocalReplyGenerator(),
@@ -80,6 +82,20 @@ export function createApp({
   },
   idempotencyStore = createIdempotencyStore()
 }) {
+  const access = operatorAccess || createOperatorAccess({ legacyAdminToken: adminToken });
+
+  function authorize(request, permission = 'read') {
+    if (!access.isConfigured()) {
+      return { response: json({ error: 'Operator API is not configured.' }, { status: 503 }) };
+    }
+    const principal = access.authenticate(request.headers.get('authorization'));
+    if (!principal) return { response: json({ error: 'Unauthorized' }, { status: 401 }) };
+    if (!access.can(principal, permission)) {
+      return { response: json({ error: 'Forbidden' }, { status: 403 }) };
+    }
+    return { principal };
+  }
+
   return {
     async handle(request) {
       const url = new URL(request.url);
@@ -133,13 +149,8 @@ export function createApp({
       }
 
       if (request.method === 'GET' && url.pathname === '/api/whatsapp/templates') {
-        if (!adminToken) {
-          return json({ error: 'Operator API is not configured.' }, { status: 503 });
-        }
-
-        if (!isOperatorAuthorized(request.headers.get('authorization'), adminToken)) {
-          return json({ error: 'Unauthorized' }, { status: 401 });
-        }
+        const authorization = authorize(request);
+        if (authorization.response) return authorization.response;
 
         try {
           return json({ templates: await whatsappClient.listTemplates() });
@@ -149,47 +160,38 @@ export function createApp({
       }
 
       if (request.method === 'GET' && url.pathname === '/api/whatsapp/events') {
-        if (!adminToken) {
-          return json({ error: 'Operator API is not configured.' }, { status: 503 });
-        }
-
-        if (!isOperatorAuthorized(request.headers.get('authorization'), adminToken)) {
-          return json({ error: 'Unauthorized' }, { status: 401 });
-        }
+        const authorization = authorize(request);
+        if (authorization.response) return authorization.response;
 
         const workspace = await workspaceStore.getWorkspace();
         return json({ events: workspace.events });
       }
 
       if (request.method === 'GET' && url.pathname === '/api/workspace') {
-        if (!adminToken) {
-          return json({ error: 'Operator API is not configured.' }, { status: 503 });
-        }
+        const authorization = authorize(request);
+        if (authorization.response) return authorization.response;
 
-        if (!isOperatorAuthorized(request.headers.get('authorization'), adminToken)) {
-          return json({ error: 'Unauthorized' }, { status: 401 });
-        }
+        return json({
+          ...await workspaceStore.getWorkspace(),
+          operator: authorization.principal
+        });
+      }
 
-        return json(await workspaceStore.getWorkspace());
+      if (request.method === 'GET' && url.pathname === '/api/session') {
+        const authorization = authorize(request);
+        if (authorization.response) return authorization.response;
+        return json({ operator: authorization.principal });
       }
 
       if (request.method === 'GET' && url.pathname === '/api/ai/status') {
-        if (!adminToken) {
-          return json({ error: 'Operator API is not configured.' }, { status: 503 });
-        }
-        if (!isOperatorAuthorized(request.headers.get('authorization'), adminToken)) {
-          return json({ error: 'Unauthorized' }, { status: 401 });
-        }
+        const authorization = authorize(request);
+        if (authorization.response) return authorization.response;
         return json(replyGenerator.getStatus());
       }
 
       if (['GET', 'POST'].includes(request.method) && url.pathname === '/api/automation') {
-        if (!adminToken) {
-          return json({ error: 'Operator API is not configured.' }, { status: 503 });
-        }
-        if (!isOperatorAuthorized(request.headers.get('authorization'), adminToken)) {
-          return json({ error: 'Unauthorized' }, { status: 401 });
-        }
+        const authorization = authorize(request, request.method === 'POST' ? 'admin' : 'read');
+        if (authorization.response) return authorization.response;
         if (request.method === 'GET') return json(automationEngine.getStatus());
         const decisions = await automationEngine.run();
         return json({ decisions });
@@ -197,12 +199,8 @@ export function createApp({
 
       const conversationDraftMatch = url.pathname.match(/^\/api\/conversations\/([^/]+)\/draft$/);
       if (request.method === 'POST' && conversationDraftMatch) {
-        if (!adminToken) {
-          return json({ error: 'Operator API is not configured.' }, { status: 503 });
-        }
-        if (!isOperatorAuthorized(request.headers.get('authorization'), adminToken)) {
-          return json({ error: 'Unauthorized' }, { status: 401 });
-        }
+        const authorization = authorize(request, 'draft');
+        if (authorization.response) return authorization.response;
         if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) {
           return json({ error: 'Content-Type must be application/json.' }, { status: 415 });
         }
@@ -218,10 +216,20 @@ export function createApp({
           if (!conversation) {
             return json({ error: 'Live conversation not found.' }, { status: 404 });
           }
-          return json({ draft: await replyGenerator.generate({
+          const draft = await replyGenerator.generate({
             conversation,
             tone: payload.tone || 'helpful'
-          }) });
+          });
+          await workspaceStore.recordAudit({
+            id: `operator:draft:${randomUUID()}`,
+            type: 'operator.draft',
+            conversationId,
+            actor: authorization.principal,
+            provider: draft.provider,
+            model: draft.model,
+            timestamp: new Date().toISOString()
+          });
+          return json({ draft });
         } catch (error) {
           return json({ error: error.message }, { status: error.status || 502 });
         }
@@ -229,12 +237,8 @@ export function createApp({
 
       const conversationActionMatch = url.pathname.match(/^\/api\/conversations\/([^/]+)\/actions$/);
       if (request.method === 'POST' && conversationActionMatch) {
-        if (!adminToken) {
-          return json({ error: 'Operator API is not configured.' }, { status: 503 });
-        }
-        if (!isOperatorAuthorized(request.headers.get('authorization'), adminToken)) {
-          return json({ error: 'Unauthorized' }, { status: 401 });
-        }
+        const authorization = authorize(request, 'manage');
+        if (authorization.response) return authorization.response;
         if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) {
           return json({ error: 'Content-Type must be application/json.' }, { status: 415 });
         }
@@ -243,7 +247,8 @@ export function createApp({
           const payload = await request.json();
           const conversation = await workspaceStore.applyAction({
             conversationId: decodeURIComponent(conversationActionMatch[1]),
-            action: payload.action
+            action: payload.action,
+            actor: authorization.principal
           });
           return json({ conversation });
         } catch (error) {
@@ -252,13 +257,8 @@ export function createApp({
       }
 
       if (request.method === 'POST' && url.pathname === '/api/whatsapp/messages') {
-        if (!adminToken) {
-          return json({ error: 'Operator API is not configured.' }, { status: 503 });
-        }
-
-        if (!isOperatorAuthorized(request.headers.get('authorization'), adminToken)) {
-          return json({ error: 'Unauthorized' }, { status: 401 });
-        }
+        const authorization = authorize(request, 'reply');
+        if (authorization.response) return authorization.response;
 
         const idempotencyKey = request.headers.get('idempotency-key') || '';
         if (!/^[A-Za-z0-9_-]{8,128}$/.test(idempotencyKey)) {
@@ -321,7 +321,7 @@ export function createApp({
 
           const result = await idempotencyStore.execute({
             key: idempotencyKey,
-            fingerprint: JSON.stringify(normalizedMessage),
+            fingerprint: JSON.stringify({ ...normalizedMessage, operatorId: authorization.principal.id }),
             operation: async () => {
               const sent = normalizedMessage.type === 'template'
                 ? await whatsappClient.sendTemplate(normalizedMessage)
@@ -331,9 +331,21 @@ export function createApp({
                     conversationId: normalizedMessage.conversationId,
                     to: normalizedMessage.to,
                     body: normalizedMessage.body,
-                    messageId: sent.messageId
+                    messageId: sent.messageId,
+                    actor: authorization.principal
                   })
                 : null;
+              if (!conversation) {
+                await workspaceStore.recordAudit({
+                  id: `operator:message:${sent.messageId}`,
+                  type: 'operator.message',
+                  actor: authorization.principal,
+                  messageType: normalizedMessage.type,
+                  recipient: normalizedMessage.to,
+                  messageId: sent.messageId,
+                  timestamp: new Date().toISOString()
+                });
+              }
               return { ...sent, conversation };
             }
           });

@@ -47,6 +47,15 @@
 4. Re-run the readiness and workspace checks above.
 5. Revoke the old credential after the new one succeeds.
 
+## Operator roles
+
+- Configure named local accounts with `OPERATOR_ACCOUNTS_JSON`; use long, unique tokens and safe non-personal IDs when possible.
+- `viewer` can inspect workspace, event, template, AI, and automation status data.
+- `agent` adds draft generation, live replies, escalations, and deferrals.
+- `admin` adds manual automation runs. Background automation still follows the environment safety policy.
+- `OPERATOR_API_TOKEN` is treated as the `legacy-admin` identity for backward compatibility.
+- Reply, template, draft, escalate, and defer records include operator ID and role but never the bearer token.
+
 ## Production boundary
 
 The bundled SQLite workspace provides atomic, durable state for one local server and multiple browser/operator sessions. A future multi-host deployment should replace the adapter with a network database while preserving the `applyEvents`, `getWorkspace`, `recordReply`, and `applyAction` interface.
