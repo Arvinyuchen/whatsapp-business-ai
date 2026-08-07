@@ -42,3 +42,25 @@ export async function applyLiveConversationAction({
   );
   return readJson(response);
 }
+
+export async function generateLiveReplyDraft({
+  token,
+  conversationId,
+  tone,
+  fetchImpl = fetch
+}) {
+  if (!token) throw new Error('Load the live workspace before generating an AI draft.');
+  if (!conversationId) throw new Error('A live conversation is required.');
+  const response = await fetchImpl(
+    `/api/conversations/${encodeURIComponent(conversationId)}/draft`,
+    {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({ tone })
+    }
+  );
+  return readJson(response);
+}

@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   applyLiveConversationAction,
+  generateLiveReplyDraft,
   loadLiveWorkspace
 } from '../src/live-workspace.js';
 
@@ -48,4 +49,21 @@ test('live workspace client surfaces authorization failures', async () => {
     }),
     /unauthorized/i
   );
+});
+
+test('live draft client requests an operator-reviewed AI suggestion', async () => {
+  let request;
+  const result = await generateLiveReplyDraft({
+    token: 'operator-secret',
+    conversationId: 'whatsapp:8619566373059',
+    tone: 'ops',
+    fetchImpl: async (...args) => {
+      request = args;
+      return Response.json({ draft: { body: 'I will check that.', provider: 'local', model: null } });
+    }
+  });
+
+  assert.equal(request[0], '/api/conversations/whatsapp%3A8619566373059/draft');
+  assert.deepEqual(JSON.parse(request[1].body), { tone: 'ops' });
+  assert.equal(result.draft.body, 'I will check that.');
 });

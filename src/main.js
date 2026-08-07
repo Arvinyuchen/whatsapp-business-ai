@@ -3,7 +3,11 @@ import { createActivityRefresh } from './activity-refresh.js';
 import { seedConversations } from './conversations.js';
 import { createLocalStorageAdapter } from './storage.js';
 import { createRequestKeyStore } from './request-key-store.js';
-import { applyLiveConversationAction, loadLiveWorkspace } from './live-workspace.js';
+import {
+  applyLiveConversationAction,
+  generateLiveReplyDraft,
+  loadLiveWorkspace
+} from './live-workspace.js';
 import { presentWhatsAppEvent, sortWhatsAppEvents } from './whatsapp-activity.js';
 import { sendWhatsAppReply } from './whatsapp-reply.js';
 
@@ -634,18 +638,40 @@ elements.stockCheckToggle.addEventListener('change', () => {
 
 elements.replyDraft.addEventListener('input', clearReplyError);
 
-elements.rewriteButton.addEventListener('click', () => {
+elements.rewriteButton.addEventListener('click', async () => {
   const conversation = store.getSnapshot().selectedConversation;
   if (!conversation) return;
-  const opening =
-    uiState.tone === 'ops'
-      ? 'Operational update:'
-      : uiState.tone === 'sales'
-        ? 'Thanks for getting in touch.'
-        : 'Thanks for the details.';
-  elements.replyDraft.value = `${opening} ${getSuggestedReply(conversation)}`;
-  clearReplyError();
-  elements.replyDraft.focus();
+  elements.rewriteButton.disabled = true;
+  const label = elements.rewriteButton.lastChild;
+  label.textContent = ' Generating…';
+  try {
+    if (conversation.source === 'whatsapp') {
+      const result = await generateLiveReplyDraft({
+        token: uiState.operatorToken,
+        conversationId: conversation.id,
+        tone: uiState.tone
+      });
+      elements.replyDraft.value = result.draft.body;
+      showToast(result.draft.provider === 'openai'
+        ? `AI draft generated with ${result.draft.model}.`
+        : 'Local fallback draft generated. Add OPENAI_API_KEY for model-generated drafts.');
+    } else {
+      const opening = uiState.tone === 'ops'
+        ? 'Operational update:'
+        : uiState.tone === 'sales'
+          ? 'Thanks for getting in touch.'
+          : 'Thanks for the details.';
+      elements.replyDraft.value = `${opening} ${getSuggestedReply(conversation)}`;
+    }
+    clearReplyError();
+    elements.replyDraft.focus();
+  } catch (error) {
+    elements.replyError.textContent = error.message;
+    elements.replyDraft.setAttribute('aria-invalid', 'true');
+  } finally {
+    elements.rewriteButton.disabled = false;
+    label.textContent = ' Rewrite';
+  }
 });
 
 elements.sendButton.addEventListener('click', async () => {

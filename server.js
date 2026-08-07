@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { createApp } from './server/app.js';
 import { createSqliteWorkspaceStore } from './server/workspace-store.js';
 import { createNodeHandler } from './server/node-adapter.js';
+import { createReplyGenerator } from './server/reply-generator.js';
 import { createWhatsAppClient } from './server/whatsapp-client.js';
 import { createWhatsAppWebhook } from './server/whatsapp-webhook.js';
 
@@ -24,6 +25,14 @@ const whatsappClient = createWhatsAppClient({
 const whatsappWebhook = createWhatsAppWebhook({
   verifyToken: process.env.WHATSAPP_VERIFY_TOKEN,
   appSecret: process.env.META_APP_SECRET
+});
+const configuredOpenAITimeout = Number.parseInt(process.env.OPENAI_REQUEST_TIMEOUT_MS || '', 10);
+const replyGenerator = createReplyGenerator({
+  apiKey: process.env.OPENAI_API_KEY,
+  model: process.env.OPENAI_MODEL || 'gpt-5.6-terra',
+  requestTimeoutMs: Number.isSafeInteger(configuredOpenAITimeout) && configuredOpenAITimeout > 0
+    ? configuredOpenAITimeout
+    : 20_000
 });
 const workspaceStore = createSqliteWorkspaceStore({
   filePath: resolve(
@@ -55,6 +64,7 @@ const app = createApp({
   staticRoot: projectRoot,
   adminToken: process.env.OPERATOR_API_TOKEN,
   publicWebhookUrl: process.env.PUBLIC_WEBHOOK_URL,
+  replyGenerator,
   workspaceStore
 });
 const server = createServer(createNodeHandler(app));

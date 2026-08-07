@@ -279,6 +279,61 @@ test('operator actions update live conversations on the server', async () => {
   assert.equal((await response.json()).conversation.workflow, 'deferred');
 });
 
+test('operator can generate a draft for a server-owned live conversation', async () => {
+  const workspaceStore = createMemoryWorkspaceStore();
+  await workspaceStore.applyEvents([{
+    type: 'message.received',
+    messageId: 'wamid.draft',
+    from: '8619566373059',
+    text: 'Do you have this in stock?'
+  }]);
+  let generationInput;
+  const app = createApp({
+    adminToken: 'operator-secret',
+    workspaceStore,
+    replyGenerator: {
+      getStatus: () => ({ configured: true, provider: 'test', model: 'test-model' }),
+      generate: async (input) => {
+        generationInput = input;
+        return { body: 'I will check availability.', provider: 'test', model: 'test-model' };
+      }
+    },
+    whatsappClient: { getStatus: () => ({ configured: true, graphVersion: 'v25.0', missing: [] }) },
+    whatsappWebhook: { getStatus: () => ({ configured: true, missing: [] }) }
+  });
+
+  const response = await app.handle(new Request(
+    'http://localhost/api/conversations/whatsapp%3A8619566373059/draft',
+    {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer operator-secret',
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({ tone: 'helpful' })
+    }
+  ));
+
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).draft.body, 'I will check availability.');
+  assert.equal(generationInput.conversation.id, 'whatsapp:8619566373059');
+  assert.equal(generationInput.tone, 'helpful');
+});
+
+test('AI status reports local fallback without exposing API credentials', async () => {
+  const app = createApp({
+    adminToken: 'operator-secret',
+    whatsappClient: { getStatus: () => ({ configured: true, graphVersion: 'v25.0', missing: [] }) },
+    whatsappWebhook: { getStatus: () => ({ configured: true, missing: [] }) }
+  });
+
+  const response = await app.handle(new Request('http://localhost/api/ai/status', {
+    headers: { authorization: 'Bearer operator-secret' }
+  }));
+
+  assert.deepEqual(await response.json(), { configured: false, provider: 'local', model: null });
+});
+
 test('operator can list WhatsApp message templates', async () => {
   const templates = [
     {

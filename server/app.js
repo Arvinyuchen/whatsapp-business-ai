@@ -3,6 +3,7 @@ import { extname, resolve, sep } from 'node:path';
 
 import { createMemoryWorkspaceStore } from './workspace-store.js';
 import { createIdempotencyStore, isOperatorAuthorized } from './operator-security.js';
+import { createLocalReplyGenerator } from './reply-generator.js';
 
 const securityHeaders = {
   'content-security-policy': "default-src 'self'; base-uri 'none'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data:; script-src 'self'; style-src 'self'",
@@ -71,6 +72,7 @@ export function createApp({
   adminToken,
   publicWebhookUrl,
   workspaceStore = createMemoryWorkspaceStore(),
+  replyGenerator = createLocalReplyGenerator(),
   idempotencyStore = createIdempotencyStore()
 }) {
   return {
@@ -163,6 +165,48 @@ export function createApp({
         }
 
         return json(await workspaceStore.getWorkspace());
+      }
+
+      if (request.method === 'GET' && url.pathname === '/api/ai/status') {
+        if (!adminToken) {
+          return json({ error: 'Operator API is not configured.' }, { status: 503 });
+        }
+        if (!isOperatorAuthorized(request.headers.get('authorization'), adminToken)) {
+          return json({ error: 'Unauthorized' }, { status: 401 });
+        }
+        return json(replyGenerator.getStatus());
+      }
+
+      const conversationDraftMatch = url.pathname.match(/^\/api\/conversations\/([^/]+)\/draft$/);
+      if (request.method === 'POST' && conversationDraftMatch) {
+        if (!adminToken) {
+          return json({ error: 'Operator API is not configured.' }, { status: 503 });
+        }
+        if (!isOperatorAuthorized(request.headers.get('authorization'), adminToken)) {
+          return json({ error: 'Unauthorized' }, { status: 401 });
+        }
+        if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) {
+          return json({ error: 'Content-Type must be application/json.' }, { status: 415 });
+        }
+
+        try {
+          const payload = await request.json();
+          if (payload.tone && !['helpful', 'sales', 'ops'].includes(payload.tone)) {
+            return json({ error: 'Unsupported reply tone.' }, { status: 400 });
+          }
+          const conversationId = decodeURIComponent(conversationDraftMatch[1]);
+          const workspace = await workspaceStore.getWorkspace();
+          const conversation = workspace.conversations.find(({ id }) => id === conversationId);
+          if (!conversation) {
+            return json({ error: 'Live conversation not found.' }, { status: 404 });
+          }
+          return json({ draft: await replyGenerator.generate({
+            conversation,
+            tone: payload.tone || 'helpful'
+          }) });
+        } catch (error) {
+          return json({ error: error.message }, { status: error.status || 502 });
+        }
       }
 
       const conversationActionMatch = url.pathname.match(/^\/api\/conversations\/([^/]+)\/actions$/);

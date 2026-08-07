@@ -17,6 +17,8 @@
 - Cancelling the review keeps the conversation open and does not call the send API.
 - Outbound requests require an operator bearer token and an idempotency key. Retrying the same unchanged request reuses the original key.
 - A live conversation resolves only after Meta accepts the message. Failed or undelivered status webhooks reopen it for review.
+- AI generation only drafts text. It never sends to WhatsApp, and the normal recipient/message confirmation remains mandatory.
+- Without `OPENAI_API_KEY`, Rewrite uses the deterministic local fallback. With a key, the server uses the Responses API and does not store the response at OpenAI (`store: false`).
 
 ## Webhooks and recovery
 
