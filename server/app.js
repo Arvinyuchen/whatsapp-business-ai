@@ -1,6 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 
+import { createMemoryEventStore } from './event-store.js';
+
 const contentTypes = {
   '.css': 'text/css; charset=utf-8',
   '.html': 'text/html; charset=utf-8',
@@ -56,10 +58,9 @@ export function createApp({
   whatsappWebhook,
   staticRoot,
   adminToken,
-  publicWebhookUrl
+  publicWebhookUrl,
+  eventStore = createMemoryEventStore()
 }) {
-  const recentEvents = [];
-
   return {
     async handle(request) {
       const url = new URL(request.url);
@@ -103,9 +104,12 @@ export function createApp({
           return json({ error: 'Invalid webhook signature' }, { status: 401 });
         }
 
-        recentEvents.push(...result.events);
-        if (recentEvents.length > 50) recentEvents.splice(0, recentEvents.length - 50);
-        return json({ received: true, eventCount: result.events.length });
+        const stored = await eventStore.append(result.events);
+        return json({
+          received: true,
+          eventCount: stored.added,
+          duplicateCount: stored.duplicates
+        });
       }
 
       if (request.method === 'GET' && url.pathname === '/api/whatsapp/templates') {
@@ -133,7 +137,7 @@ export function createApp({
           return json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        return json({ events: structuredClone(recentEvents) });
+        return json({ events: await eventStore.list() });
       }
 
       if (request.method === 'POST' && url.pathname === '/api/whatsapp/messages') {

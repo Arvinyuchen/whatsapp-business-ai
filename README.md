@@ -33,6 +33,7 @@ npm test
 - Signed inbound messages promoted into persistent, deduplicated operator inbox conversations
 - Confirmed live replies sent through the authenticated operator API, with Meta message IDs retained locally
 - Delivery-status webhooks reconciled into matching replies, with failures reopened for review
+- Bounded, deduplicated webhook history persisted across server restarts
 - Future module navigation for warehouse, logistics, and analytics
 
 Seeded demo conversations remain browser-local. Conversations created from signed WhatsApp webhooks are marked live; their reply action requires loaded operator access and a separate confirmation before the server contacts Meta. Escalate and defer actions remain browser-local.
@@ -54,6 +55,7 @@ Seeded demo conversations remain browser-local. Conversations created from signe
    - `META_APP_SECRET`
    - `OPERATOR_API_TOKEN` (a private bearer token for operator-only APIs)
    - `PUBLIC_WEBHOOK_URL` (the public HTTPS callback registered with Meta)
+   - `WHATSAPP_EVENT_STORE_PATH` (optional local event-history path; defaults to `.data/whatsapp-events.json`)
 
 3. Start the app with `npm run dev`, then open the URL printed in the terminal. The **Connect WhatsApp** dialog reports any missing values.
 

@@ -109,8 +109,51 @@ test('signed webhook events are accepted and exposed to the operator inbox', asy
     })
   );
 
-  assert.deepEqual(await webhookResponse.json(), { received: true, eventCount: 1 });
+  assert.deepEqual(await webhookResponse.json(), {
+    received: true,
+    eventCount: 1,
+    duplicateCount: 0
+  });
   assert.deepEqual(await inboxResponse.json(), { events: [normalizedEvent] });
+});
+
+test('webhook retries are acknowledged once and deduplicated from the operator inbox', async () => {
+  const normalizedEvent = {
+    type: 'message.received',
+    messageId: 'wamid.duplicate',
+    from: '61400000000',
+    text: 'Hello again'
+  };
+  const app = createApp({
+    adminToken: 'operator-secret',
+    whatsappClient: { getStatus: () => ({ configured: true, graphVersion: 'v25.0', missing: [] }) },
+    whatsappWebhook: {
+      getStatus: () => ({ configured: true, missing: [] }),
+      receive: () => ({ accepted: true, events: [normalizedEvent] })
+    }
+  });
+  const webhookRequest = () => new Request('http://localhost/webhooks/whatsapp', {
+    method: 'POST',
+    body: '{}'
+  });
+
+  const firstResponse = await app.handle(webhookRequest());
+  const retryResponse = await app.handle(webhookRequest());
+  const inboxResponse = await app.handle(new Request('http://localhost/api/whatsapp/events', {
+    headers: { authorization: 'Bearer operator-secret' }
+  }));
+
+  assert.deepEqual(await firstResponse.json(), {
+    received: true,
+    eventCount: 1,
+    duplicateCount: 0
+  });
+  assert.deepEqual(await retryResponse.json(), {
+    received: true,
+    eventCount: 0,
+    duplicateCount: 1
+  });
+  assert.deepEqual((await inboxResponse.json()).events, [normalizedEvent]);
 });
 
 test('webhook events reject unauthenticated operator access', async () => {
