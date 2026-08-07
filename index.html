@@ -31,7 +31,7 @@
             <span class="nav-icon inbox-icon" aria-hidden="true"></span>
             <span>Review queue</span>
           </button>
-          <button class="nav-item" type="button" disabled title="Available in a future module">
+          <button class="nav-item" id="automationNavButton" type="button" aria-haspopup="dialog">
             <span class="nav-icon automation-icon" aria-hidden="true"></span>
             <span>Automations</span>
           </button>
@@ -52,7 +52,7 @@
         <div class="sidebar-footer">
           <span class="live-dot"><i aria-hidden="true"></i> Demo workspace</span>
           <strong id="sidebarReviewCount">1 needs review</strong>
-          <span>Decisions save in this browser</span>
+          <span>Demo saves here · live saves on server</span>
         </div>
       </aside>
 
@@ -273,6 +273,21 @@
         </div>
         <p class="activity-feedback" id="activityFeedback" aria-live="polite">Load the workspace to review signed webhook activity.</p>
         <div class="activity-ledger" id="activityLedger" aria-live="polite"></div>
+      </section>
+      <section class="automation-desk" aria-labelledby="automationDeskTitle">
+        <div class="activity-desk-header">
+          <div>
+            <p class="eyebrow">Guarded automation</p>
+            <h3 id="automationDeskTitle">Auto-response policy</h3>
+          </div>
+          <span class="connection-state-badge" id="automationModeBadge">Not loaded</span>
+        </div>
+        <p class="activity-feedback" id="automationFeedback" aria-live="polite">Load the workspace to inspect automation safeguards.</p>
+        <dl class="automation-policy-grid">
+          <div><dt>Allowlisted recipients</dt><dd id="automationAllowlist">—</dd></div>
+          <div><dt>Minimum confidence</dt><dd id="automationConfidence">—</dd></div>
+        </dl>
+        <small>Dry-run evaluates and audits but never sends. Live mode still requires every displayed guard.</small>
       </section>
       <section class="template-desk" aria-labelledby="templateDeskTitle">
         <div class="template-desk-header">

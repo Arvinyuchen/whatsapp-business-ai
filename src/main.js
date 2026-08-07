@@ -38,6 +38,7 @@ const uiState = {
 
 const elements = {
   serveWarning: document.querySelector('#serveWarning'),
+  automationNavButton: document.querySelector('#automationNavButton'),
   queueFilter: document.querySelector('#queueFilter'),
   conversationList: document.querySelector('#conversationList'),
   sidebarReviewCount: document.querySelector('#sidebarReviewCount'),
@@ -91,6 +92,10 @@ const elements = {
   refreshActivityButton: document.querySelector('#refreshActivityButton'),
   activityFeedback: document.querySelector('#activityFeedback'),
   activityLedger: document.querySelector('#activityLedger'),
+  automationModeBadge: document.querySelector('#automationModeBadge'),
+  automationFeedback: document.querySelector('#automationFeedback'),
+  automationAllowlist: document.querySelector('#automationAllowlist'),
+  automationConfidence: document.querySelector('#automationConfidence'),
   stockCheckToggle: document.querySelector('#stockCheckToggle'),
   toneOptions: document.querySelectorAll('.tone-option'),
   sendConfirmDialog: document.querySelector('#sendConfirmDialog'),
@@ -491,6 +496,38 @@ async function loadWhatsAppActivity({ useEnteredToken = false, silent = false } 
   }
 }
 
+async function loadAutomationStatus({ useEnteredToken = false } = {}) {
+  const token = useEnteredToken
+    ? elements.operatorToken.value.trim()
+    : uiState.operatorToken;
+  if (!token) {
+    elements.automationFeedback.textContent = 'Load the workspace to inspect automation safeguards.';
+    return false;
+  }
+  try {
+    const response = await fetch('/api/automation', {
+      headers: { accept: 'application/json', authorization: `Bearer ${token}` }
+    });
+    const status = await response.json();
+    if (!response.ok) throw new Error(status.error || 'Unable to load automation policy.');
+    elements.automationModeBadge.textContent = status.mode;
+    elements.automationModeBadge.dataset.ready = String(status.mode !== 'off');
+    elements.automationAllowlist.textContent = status.allowlistSize;
+    elements.automationConfidence.textContent = `${Math.round(status.minConfidence * 100)}%`;
+    elements.automationFeedback.textContent = status.mode === 'dry-run'
+      ? 'Safe evaluation is active. Customer sending is disabled.'
+      : status.mode === 'live'
+        ? 'Live mode is active. Only allowlisted, high-confidence drafts can send.'
+        : 'Automation is disabled.';
+    return true;
+  } catch (error) {
+    elements.automationModeBadge.textContent = 'Unavailable';
+    elements.automationModeBadge.removeAttribute('data-ready');
+    elements.automationFeedback.textContent = error.message;
+    return false;
+  }
+}
+
 const activityRefresh = createActivityRefresh({
   refresh: () => loadWhatsAppActivity({ silent: true }),
   isVisible: () => !document.hidden
@@ -837,12 +874,18 @@ elements.connectWhatsAppButton.addEventListener('click', () => {
   elements.connectionDialog.showModal();
   loadConnectionStatus();
 });
+elements.automationNavButton.addEventListener('click', () => {
+  elements.connectionDialog.showModal();
+  loadConnectionStatus();
+  loadAutomationStatus();
+});
 
 elements.refreshConnectionButton.addEventListener('click', loadConnectionStatus);
 elements.templateAccessForm.addEventListener('submit', (event) => {
   event.preventDefault();
   loadTemplates({ useEnteredToken: true });
   const activityLoad = loadWhatsAppActivity({ useEnteredToken: true });
+  loadAutomationStatus({ useEnteredToken: true });
   elements.operatorToken.value = '';
   activityLoad.then((loaded) => {
     if (loaded) activityRefresh.start();

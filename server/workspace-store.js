@@ -14,7 +14,15 @@ function emptyWorkspace() {
 function normalizeWorkspace(workspace) {
   return {
     events: Array.isArray(workspace?.events) ? workspace.events : [],
-    conversations: Array.isArray(workspace?.conversations) ? workspace.conversations : [],
+    conversations: Array.isArray(workspace?.conversations)
+      ? workspace.conversations.map((conversation) => (
+          conversation.source === 'whatsapp'
+          && conversation.intent === 'New inbound message'
+          && conversation.confidence === 100
+            ? { ...conversation, confidence: 0 }
+            : conversation
+        ))
+      : [],
     audits: Array.isArray(workspace?.audits) ? workspace.audits : []
   };
 }
@@ -57,7 +65,7 @@ function createConversation(event) {
     status: 'Live inbound message',
     workflow: 'open',
     intent: 'New inbound message',
-    confidence: 100,
+    confidence: 0,
     queue: [],
     value: '$0',
     valueAmount: 0,

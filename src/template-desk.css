@@ -1,11 +1,39 @@
 .operator-access,
 .activity-desk,
+.automation-desk,
 .template-desk {
   margin: 4px 20px 18px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: #fbfcfb;
   padding: 16px;
+}
+
+.automation-policy-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.automation-policy-grid div {
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-muted);
+}
+
+.automation-policy-grid dt,
+.automation-desk small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.automation-policy-grid dd {
+  margin: 5px 0 0;
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 800;
 }
 
 .operator-access {
@@ -16,7 +44,8 @@
 }
 
 .operator-access h3,
-.activity-desk h3 {
+.activity-desk h3,
+.automation-desk h3 {
   margin: 2px 0 0;
   font-size: 1.05rem;
 }
@@ -379,6 +408,7 @@
 @media (max-width: 520px) {
   .operator-access,
   .activity-desk,
+  .automation-desk,
   .template-desk {
     margin-inline: 14px;
     padding: 14px;

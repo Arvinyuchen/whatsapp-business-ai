@@ -684,4 +684,5 @@ test('app serves the dashboard from the project root', async () => {
   const body = await response.text();
   assert.match(body, /Review what the AI wants to send/i);
   assert.match(body, /This dashboard needs the local server/i);
+  assert.match(body, /Auto-response policy/i);
 });

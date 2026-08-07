@@ -94,6 +94,16 @@ Seeded demo conversations remain browser-local. Conversations created from signe
 
 Never commit `.env` or production credentials. The Graph API version defaults to `v25.0` and can be changed with `META_GRAPH_API_VERSION`.
 
+### Local auto-response workflow
+
+1. Keep `AUTOMATION_MODE=dry-run`, start the server, open **Automations**, and load the workspace with an admin or agent token.
+2. Confirm the dashboard shows **DRY-RUN**, the expected confidence threshold, and the intended allowlist count. New inbound messages will create durable blocked or dry-run decisions without sending.
+3. Add `OPENAI_API_KEY` for model-generated structured drafts. The no-key local fallback always requires a human, so it can never auto-send.
+4. Put only controlled international-format recipients in `AUTOMATION_ALLOWLIST`, restart, and inspect representative dry-run decisions.
+5. Change `AUTOMATION_MODE=live` only after those checks. Live mode still refuses non-allowlisted, low-confidence, or human-required drafts and never retries a failed or ambiguous send automatically.
+
+This works from the local server and does not require deploying the dashboard. The server, HTTPS webhook tunnel, and Meta app access must remain available for real inbound customer traffic.
+
 ### Template approval and sending
 
 Meta reviews custom templates asynchronously. Open **Connect WhatsApp**, find the **Template desk**, enter your `OPERATOR_API_TOKEN`, and choose **Load templates**. The approval ledger reports each template as `APPROVED`, `PENDING`, or `REJECTED`; only approved templates are offered by the send form.

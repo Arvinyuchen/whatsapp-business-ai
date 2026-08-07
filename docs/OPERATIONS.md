@@ -27,6 +27,7 @@
 - The no-key local fallback always requires human review, so it cannot auto-send.
 - Each inbound message gets one durable automation decision. A failed or ambiguous send is not automatically retried, preventing duplicate customer messages.
 - Review automation decisions in the live activity ledger before changing from `dry-run` to `live`.
+- The **Automations** navigation item opens a read-only view of the effective mode, allowlist count, and confidence threshold. It does not provide a browser control that can silently enable live sending.
 
 ## Webhooks and recovery
 

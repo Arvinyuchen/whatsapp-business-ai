@@ -29,6 +29,7 @@ test('SQLite workspace survives recreation with its live conversation projection
 
   assert.deepEqual(workspace.events, [inboundEvent]);
   assert.equal(workspace.conversations[0].id, 'whatsapp:8619566373059');
+  assert.equal(workspace.conversations[0].confidence, 0);
   assert.deepEqual(workspace.conversations[0].messages, [['customer', 'Can you help?']]);
 });
 
