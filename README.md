@@ -34,6 +34,7 @@ npm test
 - Confirmed live replies sent through the authenticated operator API, with Meta message IDs retained locally
 - Delivery-status webhooks reconciled into matching replies, with failures reopened for review
 - Bounded, deduplicated webhook history persisted across server restarts
+- Visibility-aware live activity refresh with authorization and network recovery
 - Future module navigation for warehouse, logistics, and analytics
 
 Seeded demo conversations remain browser-local. Conversations created from signed WhatsApp webhooks are marked live; their reply action requires loaded operator access and a separate confirmation before the server contacts Meta. Escalate and defer actions remain browser-local.

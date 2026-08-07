@@ -1,4 +1,5 @@
 import { createConversationStore } from './conversation-store.js';
+import { createActivityRefresh } from './activity-refresh.js';
 import { seedConversations } from './conversations.js';
 import { createLocalStorageAdapter } from './storage.js';
 import { presentWhatsAppEvent, sortWhatsAppEvents } from './whatsapp-activity.js';
@@ -21,6 +22,7 @@ const uiState = {
   operatorToken: '',
   templates: [],
   events: [],
+  activityLoading: false,
   toastTimer: null
 };
 
@@ -368,18 +370,22 @@ function renderWhatsAppActivity() {
     .join('');
 }
 
-async function loadWhatsAppActivity({ useEnteredToken = false } = {}) {
+async function loadWhatsAppActivity({ useEnteredToken = false, silent = false } = {}) {
   const token = useEnteredToken
     ? elements.operatorToken.value.trim()
     : uiState.operatorToken;
   if (!token) {
-    setActivityFeedback('Enter the operator token to load WhatsApp activity.', 'warning');
-    return;
+    if (!silent) {
+      setActivityFeedback('Enter the operator token to load WhatsApp activity.', 'warning');
+    }
+    return false;
   }
+  if (uiState.activityLoading) return false;
 
   uiState.operatorToken = token;
+  uiState.activityLoading = true;
   elements.refreshActivityButton.disabled = true;
-  setActivityFeedback('Loading signed webhook activity…');
+  if (!silent) setActivityFeedback('Loading signed webhook activity…');
 
   try {
     const response = await fetch('/api/whatsapp/events', {
@@ -389,7 +395,11 @@ async function loadWhatsAppActivity({ useEnteredToken = false } = {}) {
       }
     });
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || 'Unable to load WhatsApp activity.');
+    if (!response.ok) {
+      const error = new Error(payload.error || 'Unable to load WhatsApp activity.');
+      error.status = response.status;
+      throw error;
+    }
 
     uiState.events = payload.events;
     const selectedBeforeSync = store.getSnapshot().selectedId;
@@ -402,17 +412,32 @@ async function loadWhatsAppActivity({ useEnteredToken = false } = {}) {
     const syncedCount = syncResult.created + syncResult.updated;
     setActivityFeedback(
       payload.events.length
-        ? `${payload.events.length} recent ${payload.events.length === 1 ? 'event' : 'events'} from signed webhooks${syncedCount ? ` · ${syncedCount} synced to the inbox` : ''}.`
-        : 'Webhook connection is ready. No events have arrived yet.',
+        ? `${payload.events.length} recent ${payload.events.length === 1 ? 'event' : 'events'} from signed webhooks${syncedCount ? ` · ${syncedCount} synced to the inbox` : ''} · Auto-refresh active.`
+        : 'Webhook connection is ready. No events have arrived yet · Auto-refresh active.',
       'success'
     );
-    elements.refreshActivityButton.disabled = false;
+    return true;
   } catch (error) {
     uiState.events = [];
     elements.activityLedger.innerHTML = '';
+    if (error.status === 401) {
+      uiState.operatorToken = '';
+      activityRefresh.stop();
+      elements.refreshTemplatesButton.disabled = true;
+      setTemplateFeedback('Operator access expired. Load the workspace again.', 'warning');
+    }
     setActivityFeedback(error.message, 'danger');
+    return false;
+  } finally {
+    uiState.activityLoading = false;
+    elements.refreshActivityButton.disabled = !uiState.operatorToken;
   }
 }
+
+const activityRefresh = createActivityRefresh({
+  refresh: () => loadWhatsAppActivity({ silent: true }),
+  isVisible: () => !document.hidden
+});
 
 function renderTemplatePreview() {
   const template = uiState.templates.find(({ id }) => id === elements.templateSelect.value);
@@ -681,10 +706,16 @@ elements.refreshConnectionButton.addEventListener('click', loadConnectionStatus)
 elements.templateAccessForm.addEventListener('submit', (event) => {
   event.preventDefault();
   loadTemplates({ useEnteredToken: true });
-  loadWhatsAppActivity({ useEnteredToken: true });
+  loadWhatsAppActivity({ useEnteredToken: true }).then((loaded) => {
+    if (loaded) activityRefresh.start();
+  });
 });
 elements.refreshTemplatesButton.addEventListener('click', () => loadTemplates());
-elements.refreshActivityButton.addEventListener('click', () => loadWhatsAppActivity());
+elements.refreshActivityButton.addEventListener('click', () => {
+  loadWhatsAppActivity().then((loaded) => {
+    if (loaded) activityRefresh.start();
+  });
+});
 elements.templateSelect.addEventListener('change', renderTemplatePreview);
 elements.templateSendForm.addEventListener('submit', (event) => {
   event.preventDefault();
@@ -692,6 +723,17 @@ elements.templateSendForm.addEventListener('submit', (event) => {
 });
 elements.closeConnectionDialog.addEventListener('click', () => elements.connectionDialog.close());
 elements.doneConnectionButton.addEventListener('click', () => elements.connectionDialog.close());
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  loadConnectionStatus();
+  activityRefresh.refreshNow();
+});
+window.addEventListener('online', () => {
+  loadConnectionStatus();
+  activityRefresh.refreshNow();
+});
+window.addEventListener('beforeunload', () => activityRefresh.stop());
 
 render();
 loadConnectionStatus();
