@@ -388,5 +388,7 @@ test('app serves the dashboard from the project root', async () => {
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('x-frame-options'), 'DENY');
   assert.match(response.headers.get('content-security-policy'), /frame-ancestors 'none'/);
-  assert.match(await response.text(), /Review what the AI wants to send/i);
+  const body = await response.text();
+  assert.match(body, /Review what the AI wants to send/i);
+  assert.match(body, /This dashboard needs the local server/i);
 });

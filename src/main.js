@@ -30,6 +30,7 @@ const uiState = {
 };
 
 const elements = {
+  serveWarning: document.querySelector('#serveWarning'),
   queueFilter: document.querySelector('#queueFilter'),
   conversationList: document.querySelector('#conversationList'),
   sidebarReviewCount: document.querySelector('#sidebarReviewCount'),
@@ -93,6 +94,8 @@ const elements = {
   approveSendConfirmButton: document.querySelector('#approveSendConfirmButton'),
   toast: document.querySelector('#toast')
 };
+
+elements.serveWarning.hidden = true;
 
 function escapeHtml(value) {
   return String(value)

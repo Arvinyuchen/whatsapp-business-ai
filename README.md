@@ -63,6 +63,8 @@ Seeded demo conversations remain browser-local. Conversations created from signe
 
 3. Start the app with `npm run dev`, then open the URL printed in the terminal. The **Connect WhatsApp** dialog reports any missing values.
 
+   Do not open `index.html` directly with a `file://` URL. Browser security blocks its JavaScript modules, so interactive controls cannot run.
+
 4. Expose only the webhook path through a public HTTPS origin and configure this callback in Meta:
 
    ```text

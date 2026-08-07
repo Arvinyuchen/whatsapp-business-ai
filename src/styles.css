@@ -33,6 +33,25 @@ body {
   color: var(--ink);
 }
 
+.serve-warning {
+  position: relative;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: var(--warning-muted);
+  color: #71450d;
+  padding: 12px 18px;
+  text-align: center;
+}
+
+.serve-warning code {
+  border-radius: 4px;
+  background: rgba(113, 69, 13, 0.1);
+  padding: 2px 5px;
+}
+
 button,
 select,
 textarea,
@@ -1400,6 +1419,10 @@ textarea[aria-invalid="true"] {
 }
 
 @media (max-width: 520px) {
+  .serve-warning {
+    display: grid;
+  }
+
   .workspace {
     padding: 14px;
   }
