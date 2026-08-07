@@ -40,6 +40,7 @@ npm test
 - Visibility-aware live activity refresh with authorization and network recovery
 - Constant-time operator authentication and idempotent outbound message requests
 - Local viewer, agent, and admin roles with durable actor attribution
+- Health, aggregate metrics, retention controls, verified export, and atomic local backups
 - Strict operator request validation and restrictive browser security headers
 - Future module navigation for warehouse, logistics, and analytics
 
@@ -64,6 +65,9 @@ Seeded demo conversations remain browser-local. Conversations created from signe
    - `OPERATOR_ACCOUNTS_JSON` (optional array of named `viewer`, `agent`, and `admin` accounts; supersedes the single-token workflow)
    - `PUBLIC_WEBHOOK_URL` (the public HTTPS callback registered with Meta)
    - `WORKSPACE_DB_PATH` (optional shared local SQLite path; defaults to `.data/workspace.sqlite`)
+   - `WORKSPACE_BACKUP_DIR` (admin-created JSON backup directory; defaults to `.data/backups`)
+   - `WORKSPACE_RETENTION_DAYS` (defaults to 90; active conversations are preserved)
+   - `WORKSPACE_EVENT_LIMIT` / `WORKSPACE_AUDIT_LIMIT` (bounded local histories)
    - `WHATSAPP_EVENT_STORE_PATH` (optional one-time migration source for older event history)
    - `META_REQUEST_TIMEOUT_MS` (optional Graph API timeout; defaults to 15000 milliseconds)
    - `OPENAI_API_KEY` (optional; enables model-generated drafts while remaining operator-reviewed)
@@ -106,6 +110,12 @@ The assigned operator token is copied into page memory only, then removed from t
 - `POST /api/conversations/:id/draft` — generates an operator-reviewed reply draft; uses a local fallback when OpenAI is not configured
 - `GET /api/ai/status` — reports the active draft provider and model without exposing credentials
 - `GET /api/session` — reports the authenticated operator ID and role without exposing token material
+- `GET /healthz` — storage liveness only; does not expose customer content or configuration
+- `GET /api/operations/metrics` — aggregate workspace counts; requires operator read access
+- `GET /api/operations/export` — downloads a versioned workspace recovery export; admin only
+- `GET /api/operations/recovery` — verifies the current export structure; admin only
+- `POST /api/operations/backup` — writes and re-verifies an atomic private local backup; admin only
+- `POST /api/operations/retention` — runs the configured retention policy immediately; admin only
 - `GET /api/automation` — reports effective automation guards; requires operator authorization
 - `POST /api/automation` — runs one guarded automation pass; requires operator authorization
 - `GET /webhooks/whatsapp` — handles Meta's subscription challenge

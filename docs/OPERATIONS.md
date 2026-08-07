@@ -39,6 +39,15 @@
 - If automatic refresh reports an error, verify the local server and network. The visible page retries when connectivity returns.
 - A `401` response clears operator access and stops polling. Reload the workspace with the current token.
 
+## Health, retention, and recovery
+
+- `GET /healthz` checks local storage readiness without authentication and returns no counts, identifiers, paths, or credentials.
+- The server runs retention at startup and every `WORKSPACE_RETENTION_INTERVAL_MS` (six hours by default). It removes expired raw events, audits, and inactive conversations while always preserving open and needs-review conversations.
+- Event and audit histories are additionally bounded by `WORKSPACE_EVENT_LIMIT` and `WORKSPACE_AUDIT_LIMIT`.
+- An admin can download a versioned recovery export with `GET /api/operations/export` or create a mode-`0600` atomic JSON backup with `POST /api/operations/backup`.
+- Every backup is structurally verified before and after writing. `GET /api/operations/recovery` verifies the current export contract without writing a file.
+- Keep `.data/backups` on encrypted storage. Exports contain customer identifiers, message text, and audit history.
+
 ## Credential rotation
 
 1. Rotate the credential in Meta or generate a new operator token.

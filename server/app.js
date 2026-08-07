@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { extname, resolve, sep } from 'node:path';
 
 import { createMemoryWorkspaceStore } from './workspace-store.js';
+import { createWorkspaceOperations } from './workspace-operations.js';
 import { createIdempotencyStore, createOperatorAccess } from './operator-security.js';
 import { createLocalReplyGenerator } from './reply-generator.js';
 
@@ -22,10 +23,10 @@ const contentTypes = {
   '.svg': 'image/svg+xml'
 };
 
-function json(payload, { status = 200 } = {}) {
+function json(payload, { status = 200, headers = {} } = {}) {
   return Response.json(payload, {
     status,
-    headers: { ...securityHeaders, 'cache-control': 'no-store' }
+    headers: { ...securityHeaders, 'cache-control': 'no-store', ...headers }
   });
 }
 
@@ -74,6 +75,7 @@ export function createApp({
   operatorAccess,
   publicWebhookUrl,
   workspaceStore = createMemoryWorkspaceStore(),
+  workspaceOperations = createWorkspaceOperations({ workspaceStore }),
   replyGenerator = createLocalReplyGenerator(),
   automationEngine = {
     getStatus: () => ({ mode: 'off', allowlistSize: 0, minConfidence: 1 }),
@@ -99,6 +101,11 @@ export function createApp({
   return {
     async handle(request) {
       const url = new URL(request.url);
+
+      if (request.method === 'GET' && url.pathname === '/healthz') {
+        const health = await workspaceOperations.health();
+        return json(health, { status: health.status === 'ok' ? 200 : 503 });
+      }
 
       if (request.method === 'GET' && url.pathname === '/api/whatsapp/status') {
         const clientStatus = whatsappClient.getStatus();
@@ -181,6 +188,42 @@ export function createApp({
         const authorization = authorize(request);
         if (authorization.response) return authorization.response;
         return json({ operator: authorization.principal });
+      }
+
+      if (request.method === 'GET' && url.pathname === '/api/operations/metrics') {
+        const authorization = authorize(request);
+        if (authorization.response) return authorization.response;
+        return json(await workspaceOperations.metrics());
+      }
+
+      if (request.method === 'GET' && url.pathname === '/api/operations/export') {
+        const authorization = authorize(request, 'admin');
+        if (authorization.response) return authorization.response;
+        return json(await workspaceOperations.exportWorkspace(), {
+          headers: { 'content-disposition': 'attachment; filename="workspace-export.json"' }
+        });
+      }
+
+      if (request.method === 'GET' && url.pathname === '/api/operations/recovery') {
+        const authorization = authorize(request, 'admin');
+        if (authorization.response) return authorization.response;
+        return json(await workspaceOperations.verifyCurrent());
+      }
+
+      if (request.method === 'POST' && url.pathname === '/api/operations/backup') {
+        const authorization = authorize(request, 'admin');
+        if (authorization.response) return authorization.response;
+        try {
+          return json({ backup: await workspaceOperations.backup() }, { status: 201 });
+        } catch (error) {
+          return json({ error: error.message }, { status: 500 });
+        }
+      }
+
+      if (request.method === 'POST' && url.pathname === '/api/operations/retention') {
+        const authorization = authorize(request, 'admin');
+        if (authorization.response) return authorization.response;
+        return json({ retention: await workspaceOperations.prune() });
       }
 
       if (request.method === 'GET' && url.pathname === '/api/ai/status') {

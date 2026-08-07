@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { createApp } from './server/app.js';
 import { createAutomationEngine } from './server/automation-engine.js';
 import { createSqliteWorkspaceStore } from './server/workspace-store.js';
+import { createWorkspaceOperations } from './server/workspace-operations.js';
 import { createNodeHandler } from './server/node-adapter.js';
 import { createOperatorAccess, parseOperatorAccounts } from './server/operator-security.js';
 import { createReplyGenerator } from './server/reply-generator.js';
@@ -36,11 +37,16 @@ const replyGenerator = createReplyGenerator({
     ? configuredOpenAITimeout
     : 20_000
 });
+const configuredEventLimit = Number.parseInt(process.env.WORKSPACE_EVENT_LIMIT || '', 10);
+const workspaceEventLimit = Number.isSafeInteger(configuredEventLimit) && configuredEventLimit > 0
+  ? configuredEventLimit
+  : 500;
 const workspaceStore = createSqliteWorkspaceStore({
   filePath: resolve(
     projectRoot,
     process.env.WORKSPACE_DB_PATH || '.data/workspace.sqlite'
-  )
+  ),
+  eventLimit: workspaceEventLimit
 });
 const existingWorkspace = await workspaceStore.getWorkspace();
 if (!existingWorkspace.events.length) {
@@ -80,6 +86,22 @@ const operatorAccess = createOperatorAccess({
   accounts: parseOperatorAccounts(process.env.OPERATOR_ACCOUNTS_JSON),
   legacyAdminToken: process.env.OPERATOR_API_TOKEN
 });
+const configuredRetentionDays = Number.parseInt(process.env.WORKSPACE_RETENTION_DAYS || '', 10);
+const configuredAuditLimit = Number.parseInt(process.env.WORKSPACE_AUDIT_LIMIT || '', 10);
+const workspaceOperations = createWorkspaceOperations({
+  workspaceStore,
+  backupDirectory: resolve(
+    projectRoot,
+    process.env.WORKSPACE_BACKUP_DIR || '.data/backups'
+  ),
+  retentionDays: Number.isSafeInteger(configuredRetentionDays) && configuredRetentionDays > 0
+    ? configuredRetentionDays
+    : 90,
+  eventLimit: workspaceEventLimit,
+  auditLimit: Number.isSafeInteger(configuredAuditLimit) && configuredAuditLimit > 0
+    ? configuredAuditLimit
+    : 1_000
+});
 const app = createApp({
   whatsappClient,
   whatsappWebhook,
@@ -88,7 +110,8 @@ const app = createApp({
   publicWebhookUrl: process.env.PUBLIC_WEBHOOK_URL,
   automationEngine,
   replyGenerator,
-  workspaceStore
+  workspaceStore,
+  workspaceOperations
 });
 const server = createServer(createNodeHandler(app));
 const port = Number.parseInt(process.env.PORT || '5179', 10);
@@ -97,6 +120,9 @@ const host = process.env.HOST || '127.0.0.1';
 server.listen(port, host, () => {
   console.log(`WhatsApp Business AI running at http://${host}:${port}`);
   automationEngine.kick();
+  workspaceOperations.prune().catch((error) => {
+    console.error('Workspace retention pass failed.', error);
+  });
 });
 const configuredAutomationInterval = Number.parseInt(
   process.env.AUTOMATION_INTERVAL_MS || '',
@@ -109,3 +135,16 @@ const automationTimer = setInterval(
     : 5_000
 );
 automationTimer.unref();
+const configuredRetentionInterval = Number.parseInt(
+  process.env.WORKSPACE_RETENTION_INTERVAL_MS || '',
+  10
+);
+const retentionTimer = setInterval(
+  () => workspaceOperations.prune().catch((error) => {
+    console.error('Workspace retention pass failed.', error);
+  }),
+  Number.isSafeInteger(configuredRetentionInterval) && configuredRetentionInterval >= 60_000
+    ? configuredRetentionInterval
+    : 6 * 60 * 60 * 1_000
+);
+retentionTimer.unref();

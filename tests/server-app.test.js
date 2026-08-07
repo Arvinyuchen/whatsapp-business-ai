@@ -420,6 +420,52 @@ test('multi-operator roles separate read, reply, and admin permissions', async (
   assert.equal(adminAutomation.status, 200);
 });
 
+test('health is public while operational exports and maintenance require admin access', async () => {
+  const operatorAccess = createOperatorAccess({ accounts: [
+    { id: 'reader', role: 'viewer', token: 'viewer-secret-token' },
+    { id: 'arvin', role: 'admin', token: 'admin-secret-token' }
+  ] });
+  const workspaceOperations = {
+    health: async () => ({ status: 'ok', storage: 'ready' }),
+    metrics: async () => ({ events: 2 }),
+    exportWorkspace: async () => ({ schemaVersion: 1, workspace: {} }),
+    verifyCurrent: async () => ({ valid: true, errors: [] }),
+    backup: async () => ({ filePath: '/private/backup.json' }),
+    prune: async () => ({ removed: { events: 1 } })
+  };
+  const app = createApp({
+    operatorAccess,
+    workspaceOperations,
+    whatsappClient: { getStatus: () => ({ configured: true, graphVersion: 'v25.0', missing: [] }) },
+    whatsappWebhook: { getStatus: () => ({ configured: true, missing: [] }) }
+  });
+  const bearer = (token) => ({ authorization: `Bearer ${token}` });
+
+  const health = await app.handle(new Request('http://localhost/healthz'));
+  const metrics = await app.handle(new Request('http://localhost/api/operations/metrics', {
+    headers: bearer('viewer-secret-token')
+  }));
+  const deniedExport = await app.handle(new Request('http://localhost/api/operations/export', {
+    headers: bearer('viewer-secret-token')
+  }));
+  const exportResponse = await app.handle(new Request('http://localhost/api/operations/export', {
+    headers: bearer('admin-secret-token')
+  }));
+  const backup = await app.handle(new Request('http://localhost/api/operations/backup', {
+    method: 'POST', headers: bearer('admin-secret-token')
+  }));
+  const retention = await app.handle(new Request('http://localhost/api/operations/retention', {
+    method: 'POST', headers: bearer('admin-secret-token')
+  }));
+
+  assert.equal(health.status, 200);
+  assert.equal(metrics.status, 200);
+  assert.equal(deniedExport.status, 403);
+  assert.match(exportResponse.headers.get('content-disposition'), /workspace-export\.json/);
+  assert.equal(backup.status, 201);
+  assert.equal(retention.status, 200);
+});
+
 test('operator can list WhatsApp message templates', async () => {
   const templates = [
     {

@@ -38,6 +38,13 @@ function deliveryLabel(status) {
   return labels[status] || `Live reply status: ${status || 'updated'}`;
 }
 
+function eventIsoTimestamp(event) {
+  const seconds = Number(event?.timestamp);
+  return Number.isFinite(seconds) && seconds > 0
+    ? new Date(seconds * 1_000).toISOString()
+    : new Date().toISOString();
+}
+
 function createConversation(event) {
   const contactName = event.contactName || `WhatsApp ${String(event.from).slice(-4)}`;
   return {
@@ -65,6 +72,7 @@ function createConversation(event) {
       label: 'Inbound WhatsApp message received',
       ...(event.timestamp ? { timestamp: event.timestamp } : {})
     }],
+    updatedAt: eventIsoTimestamp(event),
     replies: {
       helpful: 'Thanks for your message. I am reviewing the details now and will get back to you shortly.',
       sales: 'Thanks for getting in touch. I am reviewing your request and will help you with the next step.',
@@ -108,6 +116,7 @@ function applyInboundEvents(workspace, events) {
     existing.action = 'Review the message and prepare a reply';
     existing.tags = (existing.tags || []).filter((tag) => tag !== 'Delivery failed');
     existing.preview = event.text || 'New WhatsApp message';
+    existing.updatedAt = eventIsoTimestamp(event);
     existing.messages.push(['customer', event.text || 'Message received without a text preview.']);
     existing.activity ??= [];
     existing.activity.push({
@@ -194,6 +203,7 @@ function recordReply(workspace, { conversationId, to, body, messageId, actor }) 
   conversation.messages.push(['agent', reply]);
   conversation.workflow = 'resolved';
   conversation.status = 'Live reply accepted by WhatsApp';
+  conversation.updatedAt = new Date().toISOString();
   conversation.activity ??= [];
   conversation.activity.push({
     type: 'sent',
@@ -233,6 +243,7 @@ function applyAction(workspace, { conversationId, action, actor }) {
   } else {
     throw Object.assign(new Error('Unsupported conversation action.'), { status: 400 });
   }
+  conversation.updatedAt = new Date().toISOString();
   if (actor) {
     workspace.audits.push({
       id: `operator:action:${randomUUID()}`,
@@ -267,6 +278,46 @@ function createStoreAdapter({ read, update, eventLimit }) {
         if (index === -1) workspace.audits.push(clone(audit));
         else workspace.audits[index] = clone(audit);
         return clone(audit);
+      });
+    },
+    async prune({
+      retentionDays = 90,
+      auditLimit = 1_000,
+      eventLimit: pruneEventLimit = eventLimit,
+      now = new Date()
+    } = {}) {
+      return update((workspace) => {
+        const before = new Date(now.getTime() - retentionDays * 24 * 60 * 60 * 1_000);
+        const beforeSeconds = before.getTime() / 1_000;
+        const countsBefore = {
+          events: workspace.events.length,
+          conversations: workspace.conversations.length,
+          audits: workspace.audits.length
+        };
+        workspace.events = workspace.events
+          .filter((event) => !Number.isFinite(Number(event.timestamp)) || Number(event.timestamp) >= beforeSeconds)
+          .slice(-pruneEventLimit);
+        workspace.audits = workspace.audits
+          .filter((audit) => !Number.isFinite(Date.parse(audit.timestamp)) || Date.parse(audit.timestamp) >= before.getTime())
+          .slice(-auditLimit);
+        workspace.conversations = workspace.conversations.filter((conversation) => {
+          if (['open', 'needs_review'].includes(conversation.workflow)) return true;
+          const updatedAt = Date.parse(conversation.updatedAt);
+          return !Number.isFinite(updatedAt) || updatedAt >= before.getTime();
+        });
+        return {
+          removed: {
+            events: countsBefore.events - workspace.events.length,
+            conversations: countsBefore.conversations - workspace.conversations.length,
+            audits: countsBefore.audits - workspace.audits.length
+          },
+          retained: {
+            events: workspace.events.length,
+            conversations: workspace.conversations.length,
+            audits: workspace.audits.length
+          },
+          before: before.toISOString()
+        };
       });
     }
   };
