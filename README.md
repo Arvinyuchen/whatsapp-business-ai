@@ -4,25 +4,87 @@ AI chatbot dashboard prototype for WhatsApp Business. The first screen focuses o
 
 ## Run
 
-Open `index.html` directly, or run a local dev server:
+Run the local app server:
 
 ```bash
 npm run dev
 ```
 
-No package install is required for the current static prototype.
+No package install is required.
+
+Run the behavior tests with:
+
+```bash
+npm test
+```
 
 ## Current scope
 
 - WhatsApp-style customer inbox
 - AI reply composer with tone presets
 - Intent, urgency, confidence, and order metadata
-- Automation controls for human handoff, follow-up, and inventory checks
-- Future module panels for warehouse, logistics, and analytics
+- Operator actions to send, escalate, or defer AI replies
+- Queue metrics and automatic advancement after a decision
+- Browser-local persistence with a resettable demo state
+- Decision rail explaining intent, risk, recommended action, and activity
+- Integration-status dialog for WhatsApp Cloud API configuration
+- Template desk for checking Meta approval status and sending approved templates
+- Live WhatsApp activity ledger for inbound messages and delivery updates from signed webhooks
+- Future module navigation for warehouse, logistics, and analytics
+
+The inbox remains a safe demo: its send, escalate, and defer actions update browser-local state and do not contact customers. The server API below is the explicit boundary for a future live-send workflow.
+
+## WhatsApp Cloud API setup
+
+1. Create a local environment file:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Fill in these values from your Meta app and WhatsApp Business account:
+
+   - `WHATSAPP_ACCESS_TOKEN`
+   - `WHATSAPP_PHONE_NUMBER_ID`
+   - `WHATSAPP_BUSINESS_ACCOUNT_ID`
+   - `WHATSAPP_VERIFY_TOKEN` (a secret value you choose and also enter in Meta)
+   - `META_APP_SECRET`
+   - `OPERATOR_API_TOKEN` (a private bearer token for operator-only APIs)
+   - `PUBLIC_WEBHOOK_URL` (the public HTTPS callback registered with Meta)
+
+3. Start the app with `npm run dev`, then open the URL printed in the terminal. The **Connect WhatsApp** dialog reports any missing values.
+
+4. Expose only the webhook path through a public HTTPS origin and configure this callback in Meta:
+
+   ```text
+   https://your-public-origin.example/webhooks/whatsapp
+   ```
+
+   Use the same value for Meta's verify token and `WHATSAPP_VERIFY_TOKEN`. Incoming webhook POST requests are accepted only when their `X-Hub-Signature-256` HMAC matches `META_APP_SECRET`.
+
+   For local development, a path-scoped Tailscale Funnel can expose the callback while leaving the dashboard and operator APIs private. The local server and Tailscale daemon must remain running for that URL to stay reachable.
+
+Never commit `.env` or production credentials. The Graph API version defaults to `v25.0` and can be changed with `META_GRAPH_API_VERSION`.
+
+### Template approval and sending
+
+Meta reviews custom templates asynchronously. Open **Connect WhatsApp**, find the **Template desk**, enter your `OPERATOR_API_TOKEN`, and choose **Load templates**. The approval ledger reports each template as `APPROVED`, `PENDING`, or `REJECTED`; only approved templates are offered by the send form.
+
+The operator token is kept in page memory only. It is cleared when the page reloads and is never bundled into the browser code or saved to browser storage. The same operator session loads the template desk and the recent signed-webhook activity ledger.
+
+### Local API boundaries
+
+- `GET /api/whatsapp/status` — reports configuration readiness without exposing secrets
+- `GET /api/whatsapp/templates` — lists and normalizes Meta message templates; requires `Authorization: Bearer <OPERATOR_API_TOKEN>`
+- `POST /api/whatsapp/messages` — sends text or an approved template through the configured WhatsApp client; requires `Authorization: Bearer <OPERATOR_API_TOKEN>`
+- `GET /webhooks/whatsapp` — handles Meta's subscription challenge
+- `POST /webhooks/whatsapp` — verifies and normalizes webhook notifications
+- `GET /api/whatsapp/events` — returns recent normalized webhook events; requires `Authorization: Bearer <OPERATOR_API_TOKEN>`
+
+If `OPERATOR_API_TOKEN` is unset, operator-only endpoints return `503` and cannot send or expose customer data.
 
 ## Future integration points
 
-- WhatsApp Business Cloud API webhook receiver
 - Product catalog and inventory sync
 - Warehouse management system integration
 - Courier/routing provider integration

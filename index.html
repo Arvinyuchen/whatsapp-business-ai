@@ -5,18 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="AI chatbot dashboard prototype for WhatsApp Business operations."
+      content="Operator review dashboard for WhatsApp Business AI conversations."
     />
     <title>WhatsApp Business AI</title>
-    <link rel="stylesheet" href="./src/styles.css" />
+    <link rel="stylesheet" href="./src/styles.css?v=6" />
+    <link rel="stylesheet" href="./src/template-desk.css?v=1" />
   </head>
   <body>
     <div class="app-shell">
       <aside class="sidebar" aria-label="Main navigation">
         <div class="brand">
-          <div class="brand-mark" aria-hidden="true">
-            <span></span>
-          </div>
+          <div class="brand-mark" aria-hidden="true"><span></span></div>
           <div>
             <strong>WA Business AI</strong>
             <small>Commerce Copilot</small>
@@ -24,100 +23,103 @@
         </div>
 
         <nav class="nav-list" aria-label="Product modules">
-          <button class="nav-item active" type="button" aria-label="Inbox">
+          <button class="nav-item active" type="button" aria-current="page">
             <span class="nav-icon inbox-icon" aria-hidden="true"></span>
-            <span>Inbox</span>
+            <span>Review queue</span>
           </button>
-          <button class="nav-item" type="button" aria-label="Automations">
+          <button class="nav-item" type="button" disabled title="Available in a future module">
             <span class="nav-icon automation-icon" aria-hidden="true"></span>
             <span>Automations</span>
           </button>
-          <button class="nav-item" type="button" aria-label="Warehouse">
+          <button class="nav-item" type="button" disabled title="Available in a future module">
             <span class="nav-icon warehouse-icon" aria-hidden="true"></span>
             <span>Warehouse</span>
           </button>
-          <button class="nav-item" type="button" aria-label="Logistics">
+          <button class="nav-item" type="button" disabled title="Available in a future module">
             <span class="nav-icon logistics-icon" aria-hidden="true"></span>
             <span>Logistics</span>
           </button>
-          <button class="nav-item" type="button" aria-label="Analytics">
+          <button class="nav-item" type="button" disabled title="Available in a future module">
             <span class="nav-icon analytics-icon" aria-hidden="true"></span>
             <span>Analytics</span>
           </button>
         </nav>
 
         <div class="sidebar-footer">
-          <small>Today</small>
-          <strong>92% auto-resolved</strong>
-          <span>18 orders captured</span>
+          <span class="live-dot"><i aria-hidden="true"></i> Demo workspace</span>
+          <strong id="sidebarReviewCount">1 needs review</strong>
+          <span>Decisions save in this browser</span>
         </div>
       </aside>
 
       <main class="workspace">
         <header class="topbar">
           <div>
-            <p class="eyebrow">WhatsApp Business Command Center</p>
-            <h1>AI chatbot operations</h1>
+            <p class="eyebrow">Operator desk · Sydney</p>
+            <h1>Review what the AI wants to send.</h1>
+            <p class="topbar-summary">Approve routine replies. Hold the edge cases.</p>
           </div>
           <div class="topbar-actions">
-            <button class="icon-button" type="button" aria-label="Search conversations" title="Search conversations">
-              <span class="search-icon" aria-hidden="true"></span>
+            <button class="secondary-action" id="resetButton" type="button">
+              Reset demo
             </button>
-            <button class="icon-button" type="button" aria-label="Notifications" title="Notifications">
-              <span class="bell-icon" aria-hidden="true"></span>
-            </button>
-            <button class="primary-action" type="button">
+            <button class="primary-action connection-action" id="connectWhatsAppButton" type="button" aria-haspopup="dialog">
               <span class="send-icon" aria-hidden="true"></span>
-              Connect WhatsApp
+              <span id="connectButtonLabel">Connect WhatsApp</span>
             </button>
           </div>
         </header>
 
-        <section class="status-strip" aria-label="Operational metrics">
+        <section class="status-strip" aria-label="Current queue metrics">
           <article>
-            <span>Live chats</span>
-            <strong>128</strong>
-            <small>24 need review</small>
+            <span>Active queue</span>
+            <strong id="metricActive">0</strong>
+            <small>Ready for an operator</small>
+          </article>
+          <article class="metric-review">
+            <span>Needs review</span>
+            <strong id="metricReview">0</strong>
+            <small>Guardrail raised</small>
           </article>
           <article>
-            <span>Orders detected</span>
-            <strong>42</strong>
-            <small>11 pending stock check</small>
+            <span>Orders in play</span>
+            <strong id="metricOrders">0</strong>
+            <small>Sales conversations</small>
           </article>
           <article>
-            <span>Delivery questions</span>
-            <strong>31</strong>
-            <small>Avg response 18 sec</small>
-          </article>
-          <article>
-            <span>Revenue influenced</span>
-            <strong>$18.4k</strong>
-            <small>Projected today</small>
+            <span>Value in play</span>
+            <strong id="metricValue">$0</strong>
+            <small>Across the active queue</small>
           </article>
         </section>
 
         <section class="main-grid">
-          <section class="panel conversation-list" aria-label="Conversations">
+          <section class="panel conversation-list" aria-label="Conversation queue">
             <div class="panel-header">
               <div>
                 <p class="eyebrow">Queue</p>
-                <h2>Customer conversations</h2>
+                <h2>Conversations</h2>
               </div>
-              <select id="queueFilter" aria-label="Filter queue">
-                <option value="all">All</option>
-                <option value="urgent">Urgent</option>
+              <select id="queueFilter" aria-label="Filter conversations">
+                <option value="all">Active</option>
+                <option value="needs_review">Needs review</option>
                 <option value="order">Orders</option>
                 <option value="delivery">Delivery</option>
+                <option value="deferred">Deferred</option>
+                <option value="resolved">Resolved</option>
               </select>
             </div>
             <div id="conversationList" class="conversation-stack"></div>
           </section>
 
-          <section class="panel chat-panel" aria-label="Selected chat">
+          <section class="panel chat-panel" aria-label="Selected conversation">
             <div class="chat-header">
               <div>
-                <p class="eyebrow" id="chatStatus">Priority customer</p>
-                <h2 id="chatName">Loading</h2>
+                <div class="chat-status-line">
+                  <span class="workflow-badge" id="workflowBadge">Open</span>
+                  <span id="chatStatus">Priority customer</span>
+                </div>
+                <h2 id="chatName">Select a conversation</h2>
               </div>
               <div class="chat-meta">
                 <span id="chatIntent">Intent</span>
@@ -127,121 +129,174 @@
 
             <div id="messageThread" class="message-thread" aria-live="polite"></div>
 
-            <div class="composer">
+            <div class="composer" id="composer">
               <div class="composer-toolbar" aria-label="AI reply settings">
                 <div class="segmented-control" role="group" aria-label="Reply tone">
-                  <button class="tone-option active" type="button" data-tone="helpful">Helpful</button>
-                  <button class="tone-option" type="button" data-tone="sales">Sales</button>
-                  <button class="tone-option" type="button" data-tone="ops">Ops</button>
+                  <button class="tone-option active" type="button" data-tone="helpful" aria-pressed="true">Helpful</button>
+                  <button class="tone-option" type="button" data-tone="sales" aria-pressed="false">Sales</button>
+                  <button class="tone-option" type="button" data-tone="ops" aria-pressed="false">Ops</button>
                 </div>
                 <label class="toggle">
                   <input id="stockCheckToggle" type="checkbox" checked />
-                  <span>Stock check</span>
+                  <span>Include stock check</span>
                 </label>
               </div>
-              <textarea id="replyDraft" rows="4" aria-label="AI generated reply"></textarea>
+              <label class="sr-only" for="replyDraft">Reply draft</label>
+              <textarea
+                id="replyDraft"
+                rows="5"
+                placeholder="Write or edit the reply"
+                aria-describedby="replyError"
+              ></textarea>
+              <p class="form-error" id="replyError" role="alert"></p>
               <div class="composer-actions">
+                <button class="quiet-action" id="deferButton" type="button">Defer</button>
+                <button class="warning-action" id="escalateButton" type="button">Escalate</button>
                 <button class="secondary-action" id="rewriteButton" type="button">
                   <span class="spark-icon" aria-hidden="true"></span>
                   Rewrite
                 </button>
                 <button class="primary-action" id="sendButton" type="button">
                   <span class="send-icon" aria-hidden="true"></span>
-                  Send reply
+                  <span id="sendButtonLabel">Approve &amp; send</span>
                 </button>
               </div>
             </div>
           </section>
 
-          <aside class="insight-column" aria-label="Conversation insights">
-            <section class="panel insight-panel">
-              <div class="panel-header compact">
-                <div>
-                  <p class="eyebrow">AI read</p>
-                  <h2>Action summary</h2>
-                </div>
+          <aside class="panel decision-panel" aria-label="AI decision rail">
+            <div class="panel-header decision-header">
+              <div>
+                <p class="eyebrow">Decision rail</p>
+                <h2>Why this reply?</h2>
               </div>
-              <dl class="detail-list">
-                <div>
-                  <dt>Intent</dt>
-                  <dd id="detailIntent">-</dd>
-                </div>
-                <div>
-                  <dt>Next action</dt>
-                  <dd id="detailAction">-</dd>
-                </div>
-                <div>
-                  <dt>Order value</dt>
-                  <dd id="detailValue">-</dd>
-                </div>
-                <div>
-                  <dt>Risk</dt>
-                  <dd id="detailRisk">-</dd>
-                </div>
-              </dl>
-            </section>
+              <span class="risk-badge" id="riskBadge">Low risk</span>
+            </div>
 
-            <section class="panel automations-panel">
-              <div class="panel-header compact">
+            <ol class="decision-rail">
+              <li class="rail-step complete">
+                <span class="rail-marker" aria-hidden="true"></span>
                 <div>
-                  <p class="eyebrow">Controls</p>
-                  <h2>Automation rules</h2>
+                  <small>Understand</small>
+                  <strong id="detailIntent">Intent</strong>
+                  <p id="detailConfidence">AI confidence</p>
                 </div>
-              </div>
-              <label class="rule-row">
-                <input type="checkbox" checked />
-                <span>Auto-tag buying intent</span>
-              </label>
-              <label class="rule-row">
-                <input type="checkbox" checked />
-                <span>Escalate refund requests</span>
-              </label>
-              <label class="rule-row">
-                <input type="checkbox" />
-                <span>Create shipment task</span>
-              </label>
-              <label class="rule-row">
-                <input type="checkbox" checked />
-                <span>Update CRM timeline</span>
-              </label>
-            </section>
+              </li>
+              <li class="rail-step complete">
+                <span class="rail-marker" aria-hidden="true"></span>
+                <div>
+                  <small>Guardrail</small>
+                  <strong id="detailRisk">Risk</strong>
+                  <p id="detailValue">Order value</p>
+                </div>
+              </li>
+              <li class="rail-step current">
+                <span class="rail-marker" aria-hidden="true"></span>
+                <div>
+                  <small>Recommended move</small>
+                  <strong id="detailAction">Next action</strong>
+                  <p>The operator keeps final control.</p>
+                </div>
+              </li>
+              <li class="rail-step activity-step">
+                <span class="rail-marker" aria-hidden="true"></span>
+                <div>
+                  <small>Activity</small>
+                  <ul id="activityList" class="activity-list"></ul>
+                </div>
+              </li>
+            </ol>
 
-            <section class="panel roadmap-panel">
-              <div class="panel-header compact">
-                <div>
-                  <p class="eyebrow">Expansion</p>
-                  <h2>Future modules</h2>
-                </div>
-              </div>
-              <div class="module-list">
-                <button class="module-row" type="button">
-                  <span class="module-symbol warehouse-icon" aria-hidden="true"></span>
-                  <span>
-                    <strong>Warehouse</strong>
-                    <small>Stock, picking, replenishment</small>
-                  </span>
-                </button>
-                <button class="module-row" type="button">
-                  <span class="module-symbol logistics-icon" aria-hidden="true"></span>
-                  <span>
-                    <strong>Logistics</strong>
-                    <small>Delivery status and routing</small>
-                  </span>
-                </button>
-                <button class="module-row" type="button">
-                  <span class="module-symbol analytics-icon" aria-hidden="true"></span>
-                  <span>
-                    <strong>Analysis</strong>
-                    <small>Sales, demand, service quality</small>
-                  </span>
-                </button>
-              </div>
-            </section>
+            <div class="rule-summary">
+              <p class="eyebrow">Rules affecting this reply</p>
+              <div class="rule-row-static"><span>Intent tagging</span><strong>On</strong></div>
+              <div class="rule-row-static"><span>CRM timeline</span><strong>On</strong></div>
+              <div class="rule-row-static" id="shipmentRule"><span>Shipment task</span><strong>Suggested</strong></div>
+            </div>
           </aside>
         </section>
       </main>
     </div>
 
-    <script type="module" src="./src/main.js"></script>
+    <dialog class="connection-dialog" id="connectionDialog" aria-labelledby="connectionDialogTitle">
+      <div class="connection-dialog-header">
+        <div>
+          <p class="eyebrow">WhatsApp Cloud API</p>
+          <h2 id="connectionDialogTitle">Connection readiness</h2>
+        </div>
+        <button class="dialog-close" id="closeConnectionDialog" type="button" aria-label="Close connection readiness">×</button>
+      </div>
+      <div class="connection-state">
+        <span class="connection-state-badge" id="connectionStateBadge">Checking</span>
+        <p id="connectionSummary" aria-live="polite">Checking the local server configuration…</p>
+      </div>
+      <ul class="connection-checklist" id="connectionChecklist"></ul>
+      <div class="webhook-callout">
+        <span>Meta callback URL</span>
+        <code id="webhookUrl">—</code>
+        <small>Expose this path over HTTPS before registering it in Meta App Dashboard.</small>
+      </div>
+      <div class="connection-notes">
+        <strong>Local setup</strong>
+        <ol>
+          <li>Copy <code>.env.example</code> to <code>.env</code>.</li>
+          <li>Add the Meta IDs, access token, webhook secrets, and operator token.</li>
+          <li>Restart <code>npm run dev</code>, then refresh this status.</li>
+        </ol>
+      </div>
+      <section class="operator-access" aria-labelledby="operatorAccessTitle">
+        <div>
+          <p class="eyebrow">Private operator access</p>
+          <h3 id="operatorAccessTitle">Load the live workspace</h3>
+          <p>Use the operator token once to load approved templates and recent signed WhatsApp activity.</p>
+        </div>
+        <form class="template-access" id="templateAccessForm">
+          <label for="operatorToken">Operator token</label>
+          <div class="template-access-control">
+            <input id="operatorToken" name="operatorToken" type="password" autocomplete="off" placeholder="OPERATOR_API_TOKEN">
+            <button class="secondary-action" type="submit">Load workspace</button>
+          </div>
+          <small>Held in this page only. It is never stored in browser storage.</small>
+        </form>
+      </section>
+      <section class="activity-desk" aria-labelledby="activityDeskTitle">
+        <div class="activity-desk-header">
+          <div>
+            <p class="eyebrow">Live operations</p>
+            <h3 id="activityDeskTitle">WhatsApp activity</h3>
+          </div>
+          <button class="quiet-action activity-refresh" id="refreshActivityButton" type="button" disabled>Refresh</button>
+        </div>
+        <p class="activity-feedback" id="activityFeedback" aria-live="polite">Load the workspace to review signed webhook activity.</p>
+        <div class="activity-ledger" id="activityLedger" aria-live="polite"></div>
+      </section>
+      <section class="template-desk" aria-labelledby="templateDeskTitle">
+        <div class="template-desk-header">
+          <div>
+            <p class="eyebrow">Approved messaging</p>
+            <h3 id="templateDeskTitle">Template desk</h3>
+          </div>
+          <button class="quiet-action template-refresh" id="refreshTemplatesButton" type="button" disabled>Refresh</button>
+        </div>
+        <p class="template-desk-intro">Review Meta approval states and send only templates that are ready for customers.</p>
+        <p class="template-feedback" id="templateFeedback" aria-live="polite">Enter the operator token to load Meta templates.</p>
+        <div class="template-ledger" id="templateList" aria-live="polite"></div>
+        <form class="template-send" id="templateSendForm" hidden>
+          <label for="templateRecipient">Recipient</label>
+          <input id="templateRecipient" name="templateRecipient" inputmode="tel" autocomplete="tel" placeholder="61449550842">
+          <label for="templateSelect">Approved template</label>
+          <select id="templateSelect" name="templateSelect"></select>
+          <div class="template-preview" id="templatePreview"></div>
+          <button class="primary-action" id="sendTemplateButton" type="submit">Send approved template</button>
+        </form>
+      </section>
+      <div class="dialog-actions">
+        <button class="secondary-action" id="refreshConnectionButton" type="button">Refresh status</button>
+        <button class="primary-action" id="doneConnectionButton" type="button">Done</button>
+      </div>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+    <script type="module" src="./src/main.js?v=5"></script>
   </body>
 </html>
