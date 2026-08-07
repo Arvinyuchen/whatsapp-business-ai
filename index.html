@@ -296,6 +296,26 @@
       </div>
     </dialog>
 
+    <dialog class="send-confirm-dialog" id="sendConfirmDialog" aria-labelledby="sendConfirmTitle">
+      <div class="send-confirm-header">
+        <p class="eyebrow">Live WhatsApp action</p>
+        <h2 id="sendConfirmTitle">Send this message now?</h2>
+        <p>Check the recipient and final wording. This action contacts the customer.</p>
+      </div>
+      <div class="send-confirm-recipient">
+        <span aria-hidden="true">→</span>
+        <div>
+          <small>Recipient</small>
+          <strong id="sendConfirmRecipient">—</strong>
+        </div>
+      </div>
+      <blockquote class="send-confirm-preview" id="sendConfirmPreview"></blockquote>
+      <div class="send-confirm-actions">
+        <button class="secondary-action" id="cancelSendConfirmButton" type="button">Keep editing</button>
+        <button class="primary-action" id="approveSendConfirmButton" type="button">Send now</button>
+      </div>
+    </dialog>
+
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
     <script type="module" src="./src/main.js?v=5"></script>
   </body>

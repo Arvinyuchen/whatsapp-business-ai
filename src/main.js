@@ -25,6 +25,7 @@ const uiState = {
   templates: [],
   events: [],
   activityLoading: false,
+  sendConfirmResolve: null,
   toastTimer: null
 };
 
@@ -84,6 +85,12 @@ const elements = {
   activityLedger: document.querySelector('#activityLedger'),
   stockCheckToggle: document.querySelector('#stockCheckToggle'),
   toneOptions: document.querySelectorAll('.tone-option'),
+  sendConfirmDialog: document.querySelector('#sendConfirmDialog'),
+  sendConfirmTitle: document.querySelector('#sendConfirmTitle'),
+  sendConfirmRecipient: document.querySelector('#sendConfirmRecipient'),
+  sendConfirmPreview: document.querySelector('#sendConfirmPreview'),
+  cancelSendConfirmButton: document.querySelector('#cancelSendConfirmButton'),
+  approveSendConfirmButton: document.querySelector('#approveSendConfirmButton'),
   toast: document.querySelector('#toast')
 };
 
@@ -269,6 +276,28 @@ function showToast(message) {
   uiState.toastTimer = window.setTimeout(() => {
     elements.toast.hidden = true;
   }, 3200);
+}
+
+function requestSendConfirmation({ title, recipient, body, confirmLabel }) {
+  if (uiState.sendConfirmResolve) return Promise.resolve(false);
+
+  elements.sendConfirmTitle.textContent = title;
+  elements.sendConfirmRecipient.textContent = recipient;
+  elements.sendConfirmPreview.textContent = body;
+  elements.approveSendConfirmButton.textContent = confirmLabel;
+  elements.sendConfirmDialog.showModal();
+  elements.cancelSendConfirmButton.focus();
+
+  return new Promise((resolve) => {
+    uiState.sendConfirmResolve = resolve;
+  });
+}
+
+function resolveSendConfirmation(confirmed) {
+  const resolve = uiState.sendConfirmResolve;
+  uiState.sendConfirmResolve = null;
+  if (elements.sendConfirmDialog.open) elements.sendConfirmDialog.close();
+  resolve?.(confirmed);
 }
 
 const connectionFields = [
@@ -537,9 +566,12 @@ async function sendSelectedTemplate() {
     elements.templateRecipient.focus();
     return;
   }
-  const confirmed = window.confirm(
-    `Send the approved ${template.name} template to +${recipient}?`
-  );
+  const confirmed = await requestSendConfirmation({
+    title: `Send ${template.name}?`,
+    recipient: `+${recipient}`,
+    body: template.body || template.name,
+    confirmLabel: 'Send template'
+  });
   if (!confirmed) return;
   const requestScope = 'template-send';
   const idempotencyKey = requestKeys.get(
@@ -641,9 +673,12 @@ elements.sendButton.addEventListener('click', async () => {
         return;
       }
 
-      const confirmed = window.confirm(
-        `Send this live WhatsApp reply to ${conversation.name} (+${conversation.sourceId})?\n\n${reply}`
-      );
+      const confirmed = await requestSendConfirmation({
+        title: 'Send this reply now?',
+        recipient: `${conversation.name} · +${conversation.sourceId}`,
+        body: reply,
+        confirmLabel: 'Send live reply'
+      });
       if (!confirmed) return;
 
       elements.sendButton.disabled = true;
@@ -725,7 +760,9 @@ elements.refreshConnectionButton.addEventListener('click', loadConnectionStatus)
 elements.templateAccessForm.addEventListener('submit', (event) => {
   event.preventDefault();
   loadTemplates({ useEnteredToken: true });
-  loadWhatsAppActivity({ useEnteredToken: true }).then((loaded) => {
+  const activityLoad = loadWhatsAppActivity({ useEnteredToken: true });
+  elements.operatorToken.value = '';
+  activityLoad.then((loaded) => {
     if (loaded) activityRefresh.start();
   });
 });
@@ -742,6 +779,12 @@ elements.templateSendForm.addEventListener('submit', (event) => {
 });
 elements.closeConnectionDialog.addEventListener('click', () => elements.connectionDialog.close());
 elements.doneConnectionButton.addEventListener('click', () => elements.connectionDialog.close());
+elements.cancelSendConfirmButton.addEventListener('click', () => resolveSendConfirmation(false));
+elements.approveSendConfirmButton.addEventListener('click', () => resolveSendConfirmation(true));
+elements.sendConfirmDialog.addEventListener('cancel', (event) => {
+  event.preventDefault();
+  resolveSendConfirmation(false);
+});
 
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) return;

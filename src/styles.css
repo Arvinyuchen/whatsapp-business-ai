@@ -1074,6 +1074,87 @@ textarea[aria-invalid="true"] {
   backdrop-filter: blur(3px);
 }
 
+.send-confirm-dialog {
+  width: min(500px, calc(100vw - 28px));
+  border: 1px solid rgba(7, 94, 79, 0.28);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 0;
+  box-shadow: 0 30px 90px rgba(16, 37, 30, 0.28);
+}
+
+.send-confirm-dialog::backdrop {
+  background: rgba(16, 37, 30, 0.62);
+  backdrop-filter: blur(4px);
+}
+
+.send-confirm-header {
+  padding: 22px 22px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.send-confirm-header h2 {
+  margin-top: 5px;
+  font-size: 1.35rem;
+}
+
+.send-confirm-header > p:last-child {
+  margin: 7px 0 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.send-confirm-recipient {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 22px 12px;
+}
+
+.send-confirm-recipient > span {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--success-muted);
+  color: var(--brand-strong);
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+
+.send-confirm-recipient div {
+  display: grid;
+  gap: 2px;
+}
+
+.send-confirm-recipient small {
+  color: var(--muted);
+}
+
+.send-confirm-preview {
+  max-height: 220px;
+  overflow: auto;
+  margin: 0 22px 20px;
+  border-left: 3px solid var(--brand);
+  border-radius: 0 8px 8px 0;
+  background: var(--surface-muted);
+  padding: 14px 16px;
+  color: var(--ink);
+  font-style: normal;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.send-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding: 16px 22px;
+}
+
 .connection-dialog-header,
 .dialog-actions {
   display: flex;
@@ -1349,6 +1430,11 @@ textarea[aria-invalid="true"] {
   }
 
   .dialog-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .send-confirm-actions {
     display: grid;
     grid-template-columns: 1fr;
   }

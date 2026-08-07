@@ -39,7 +39,7 @@ npm test
 - Strict operator request validation and restrictive browser security headers
 - Future module navigation for warehouse, logistics, and analytics
 
-Seeded demo conversations remain browser-local. Conversations created from signed WhatsApp webhooks are marked live; their reply action requires loaded operator access and a separate confirmation before the server contacts Meta. Escalate and defer actions remain browser-local.
+Seeded demo conversations remain browser-local. Conversations created from signed WhatsApp webhooks are marked live; their reply action requires loaded operator access and an in-app recipient/message review before the server contacts Meta. Escalate and defer actions remain browser-local.
 
 ## WhatsApp Cloud API setup
 
@@ -79,7 +79,7 @@ Never commit `.env` or production credentials. The Graph API version defaults to
 
 Meta reviews custom templates asynchronously. Open **Connect WhatsApp**, find the **Template desk**, enter your `OPERATOR_API_TOKEN`, and choose **Load templates**. The approval ledger reports each template as `APPROVED`, `PENDING`, or `REJECTED`; only approved templates are offered by the send form.
 
-The operator token is kept in page memory only. It is cleared when the page reloads and is never bundled into the browser code or saved to browser storage. The same operator session loads the template desk and the recent signed-webhook activity ledger.
+The operator token is copied into page memory only, then removed from the password field. It is cleared when the page reloads and is never bundled into browser code or saved to browser storage. The same operator session loads the template desk and the recent signed-webhook activity ledger.
 
 ### Local API boundaries
 
@@ -91,6 +91,8 @@ The operator token is kept in page memory only. It is cleared when the page relo
 - `GET /api/whatsapp/events` — returns recent normalized webhook events; requires `Authorization: Bearer <OPERATOR_API_TOKEN>`
 
 If `OPERATOR_API_TOKEN` is unset, operator-only endpoints return `503` and cannot send or expose customer data.
+
+For startup checks, credential rotation, webhook recovery, message-safety rules, and the multi-instance persistence boundary, see [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
 ## Future integration points
 
