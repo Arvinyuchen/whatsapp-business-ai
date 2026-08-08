@@ -136,6 +136,8 @@ If `OPERATOR_API_TOKEN` is unset, operator-only endpoints return `503` and canno
 
 For startup checks, credential rotation, webhook recovery, message-safety rules, and the multi-instance persistence boundary, see [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
+The customer-facing data-handling notice is published in [PRIVACY.md](PRIVACY.md).
+
 ## Future integration points
 
 - Product catalog and inventory sync
