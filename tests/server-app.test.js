@@ -528,6 +528,74 @@ test('message route sends through the configured WhatsApp client', async () => {
   });
 });
 
+test('message route sends to a BSUID when no customer phone number is available', async () => {
+  let sentRequest;
+  const app = createApp({
+    adminToken: 'operator-secret',
+    whatsappClient: {
+      getStatus: () => ({ configured: true, graphVersion: 'v25.0', missing: [] }),
+      sendText: async (request) => {
+        sentRequest = request;
+        return { messageId: 'wamid.bsuid-route' };
+      }
+    },
+    whatsappWebhook: { getStatus: () => ({ configured: true, missing: [] }) }
+  });
+
+  const response = await app.handle(new Request(
+    'http://localhost/api/whatsapp/messages',
+    {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer operator-secret',
+        'content-type': 'application/json',
+        'idempotency-key': 'bsuid-message-request'
+      },
+      body: JSON.stringify({
+        recipient: 'CN.13491208655302741918',
+        body: 'Your order is ready.'
+      })
+    }
+  ));
+
+  assert.equal(response.status, 201);
+  assert.deepEqual(sentRequest, {
+    type: 'text',
+    recipient: 'CN.13491208655302741918',
+    body: 'Your order is ready.'
+  });
+  assert.deepEqual(await response.json(), {
+    sent: true,
+    messageId: 'wamid.bsuid-route'
+  });
+});
+
+test('message route rejects a malformed BSUID before contacting Meta', async () => {
+  let sendCount = 0;
+  const app = createApp({
+    adminToken: 'operator-secret',
+    whatsappClient: {
+      getStatus: () => ({ configured: true, graphVersion: 'v25.0', missing: [] }),
+      sendText: async () => { sendCount += 1; }
+    },
+    whatsappWebhook: { getStatus: () => ({ configured: true, missing: [] }) }
+  });
+
+  const response = await app.handle(new Request('http://localhost/api/whatsapp/messages', {
+    method: 'POST',
+    headers: {
+      authorization: 'Bearer operator-secret',
+      'content-type': 'application/json',
+      'idempotency-key': 'invalid-bsuid-request'
+    },
+    body: JSON.stringify({ recipient: 'not-a-bsuid', body: 'Do not send.' })
+  }));
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: 'A valid recipient is required.' });
+  assert.equal(sendCount, 0);
+});
+
 test('message route reuses an idempotent send result', async () => {
   let sendCount = 0;
   const app = createApp({

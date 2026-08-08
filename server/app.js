@@ -322,7 +322,14 @@ export function createApp({
         }
 
         try {
-          if (!/^\d{8,15}$/.test(payload.to || '')) {
+          const to = typeof payload.to === 'string' ? payload.to.trim() : '';
+          const recipient = typeof payload.recipient === 'string'
+            ? payload.recipient.trim()
+            : '';
+          const phoneIsValid = !to || /^\d{8,15}$/.test(to);
+          const bsuidIsValid = !recipient
+            || /^[A-Z]{2}\.(?:ENT\.)?[A-Za-z0-9]{1,128}$/.test(recipient);
+          if ((!to && !recipient) || !phoneIsValid || !bsuidIsValid) {
             return json(
               { error: 'A valid recipient is required.' },
               { status: 400 }
@@ -342,7 +349,8 @@ export function createApp({
 
             normalizedMessage = {
               type: 'template',
-              to: payload.to,
+              ...(to ? { to } : {}),
+              ...(recipient ? { recipient } : {}),
               name,
               language
             };
@@ -356,7 +364,8 @@ export function createApp({
 
             normalizedMessage = {
               type: 'text',
-              to: payload.to,
+              ...(to ? { to } : {}),
+              ...(recipient ? { recipient } : {}),
               body: payload.body.trim(),
               ...(payload.conversationId ? { conversationId: payload.conversationId } : {})
             };
@@ -384,7 +393,7 @@ export function createApp({
                   type: 'operator.message',
                   actor: authorization.principal,
                   messageType: normalizedMessage.type,
-                  recipient: normalizedMessage.to,
+                  recipient: normalizedMessage.to || normalizedMessage.recipient,
                   messageId: sent.messageId,
                   timestamp: new Date().toISOString()
                 });

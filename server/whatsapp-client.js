@@ -63,7 +63,7 @@ export function createWhatsAppClient({
       }));
     },
 
-    async sendTemplate({ to, name, language = 'en_US' }) {
+    async sendTemplate({ to, recipient, name, language = 'en_US' }) {
       if (!accessToken || !phoneNumberId) {
         throw new Error('WhatsApp Cloud API is not configured.');
       }
@@ -79,7 +79,8 @@ export function createWhatsAppClient({
           body: JSON.stringify({
             messaging_product: 'whatsapp',
             recipient_type: 'individual',
-            to,
+            ...(to ? { to } : {}),
+            ...(recipient ? { recipient } : {}),
             type: 'template',
             template: {
               name,
@@ -97,7 +98,7 @@ export function createWhatsAppClient({
       return { messageId: payload.messages[0].id };
     },
 
-    async sendText({ to, body }) {
+    async sendText({ to, recipient, body }) {
       if (!accessToken || !phoneNumberId) {
         throw new Error('WhatsApp Cloud API is not configured.');
       }
@@ -113,7 +114,8 @@ export function createWhatsAppClient({
           body: JSON.stringify({
             messaging_product: 'whatsapp',
             recipient_type: 'individual',
-            to,
+            ...(to ? { to } : {}),
+            ...(recipient ? { recipient } : {}),
             type: 'text',
             text: { body, preview_url: false }
           })

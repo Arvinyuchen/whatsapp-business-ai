@@ -35,6 +35,33 @@ test('configured client sends a text message through the Meta adapter', async ()
   });
 });
 
+test('configured client sends a text message to a BSUID without a phone number', async () => {
+  let request;
+  const client = createWhatsAppClient({
+    accessToken: 'test-token',
+    phoneNumberId: '123456',
+    graphVersion: 'v25.0',
+    fetchAdapter: async (url, options) => {
+      request = { url, options };
+      return Response.json({ messages: [{ id: 'wamid.bsuid' }] });
+    }
+  });
+
+  const result = await client.sendText({
+    recipient: 'CN.13491208655302741918',
+    body: 'Your order is ready.'
+  });
+
+  assert.deepEqual(result, { messageId: 'wamid.bsuid' });
+  assert.deepEqual(JSON.parse(request.options.body), {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    recipient: 'CN.13491208655302741918',
+    type: 'text',
+    text: { body: 'Your order is ready.', preview_url: false }
+  });
+});
+
 test('configured client lists message templates as operator-ready records', async () => {
   let requestUrl;
   const client = createWhatsAppClient({
@@ -101,6 +128,35 @@ test('configured client sends an approved message template', async () => {
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
     to: '61400000000',
+    type: 'template',
+    template: {
+      name: 'arvin_greeting',
+      language: { code: 'en_US' }
+    }
+  });
+});
+
+test('configured client sends an approved template to a BSUID recipient', async () => {
+  let request;
+  const client = createWhatsAppClient({
+    accessToken: 'test-token',
+    phoneNumberId: '123456',
+    fetchAdapter: async (url, options) => {
+      request = { url, options };
+      return Response.json({ messages: [{ id: 'wamid.bsuid-template' }] });
+    }
+  });
+
+  await client.sendTemplate({
+    recipient: 'CN.13491208655302741918',
+    name: 'arvin_greeting',
+    language: 'en_US'
+  });
+
+  assert.deepEqual(JSON.parse(request.options.body), {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    recipient: 'CN.13491208655302741918',
     type: 'template',
     template: {
       name: 'arvin_greeting',
