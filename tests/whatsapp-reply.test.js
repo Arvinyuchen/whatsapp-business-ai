@@ -29,6 +29,29 @@ test('live replies use the authenticated WhatsApp message boundary', async () =>
   });
 });
 
+test('live replies address a BSUID-only conversation through the recipient field', async () => {
+  let request;
+  const userId = 'CN.13491208655302741918';
+
+  await sendWhatsAppReply({
+    token: 'operator-secret',
+    conversationId: `whatsapp:${userId}`,
+    recipient: userId,
+    body: 'Thanks, I can help with that.',
+    idempotencyKey: 'bsuid-reply-request',
+    fetchImpl: async (...args) => {
+      request = args;
+      return Response.json({ sent: true, messageId: 'wamid.bsuid-sent' }, { status: 201 });
+    }
+  });
+
+  assert.deepEqual(JSON.parse(request[1].body), {
+    recipient: userId,
+    body: 'Thanks, I can help with that.',
+    conversationId: `whatsapp:${userId}`
+  });
+});
+
 test('live replies require operator access, a valid recipient, and a non-empty body', async () => {
   const unusedFetch = () => assert.fail('fetch should not be called');
 

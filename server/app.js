@@ -382,6 +382,7 @@ export function createApp({
                 ? await workspaceStore.recordReply({
                     conversationId: normalizedMessage.conversationId,
                     to: normalizedMessage.to,
+                    recipient: normalizedMessage.recipient,
                     body: normalizedMessage.body,
                     messageId: sent.messageId,
                     actor: authorization.principal

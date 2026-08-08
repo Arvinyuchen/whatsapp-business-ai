@@ -30,6 +30,9 @@ test('SQLite workspace survives recreation with its live conversation projection
   assert.deepEqual(workspace.events, [inboundEvent]);
   assert.equal(workspace.conversations[0].id, 'whatsapp:8619566373059');
   assert.equal(workspace.conversations[0].confidence, 0);
+  assert.deepEqual(workspace.conversations[0].identity, {
+    phoneNumber: '8619566373059'
+  });
   assert.deepEqual(workspace.conversations[0].messages, [['customer', 'Can you help?']]);
 });
 
@@ -48,6 +51,58 @@ test('workspace deduplicates webhook retries and builds chronological transcript
     ['customer', 'First'],
     ['customer', 'Second']
   ]);
+});
+
+test('workspace merges phone and BSUID aliases into one durable conversation', async () => {
+  const store = createMemoryWorkspaceStore();
+  await store.applyEvents([inboundEvent]);
+  await store.applyEvents([{
+    ...inboundEvent,
+    messageId: 'wamid.identity-upgrade',
+    from: 'CN.13491208655302741918',
+    phoneNumber: '8619566373059',
+    userId: 'CN.13491208655302741918',
+    username: 'arvin_customer',
+    text: 'My account now has a BSUID.'
+  }]);
+
+  const workspace = await store.getWorkspace();
+
+  assert.equal(workspace.conversations.length, 1);
+  assert.equal(workspace.conversations[0].id, 'whatsapp:8619566373059');
+  assert.equal(workspace.conversations[0].sourceId, '8619566373059');
+  assert.deepEqual(workspace.conversations[0].identity, {
+    phoneNumber: '8619566373059',
+    userId: 'CN.13491208655302741918',
+    username: 'arvin_customer'
+  });
+  assert.deepEqual(workspace.conversations[0].messages, [
+    ['customer', 'Can you help?'],
+    ['customer', 'My account now has a BSUID.']
+  ]);
+});
+
+test('workspace records a reply addressed to a BSUID-only conversation', async () => {
+  const store = createMemoryWorkspaceStore();
+  const userId = 'CN.13491208655302741918';
+  await store.applyEvents([{
+    ...inboundEvent,
+    messageId: 'wamid.bsuid-only',
+    from: userId,
+    userId,
+    username: 'username_customer'
+  }]);
+
+  await store.recordReply({
+    conversationId: `whatsapp:${userId}`,
+    recipient: userId,
+    body: 'Yes, I can help.',
+    messageId: 'wamid.bsuid-reply'
+  });
+
+  const conversation = (await store.getWorkspace()).conversations[0];
+  assert.equal(conversation.workflow, 'resolved');
+  assert.deepEqual(conversation.messages.at(-1), ['agent', 'Yes, I can help.']);
 });
 
 test('recorded replies reconcile to the latest delivery state', async () => {

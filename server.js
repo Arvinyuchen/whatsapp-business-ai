@@ -4,7 +4,10 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createApp } from './server/app.js';
-import { createAutomationEngine } from './server/automation-engine.js';
+import {
+  createAutomationEngine,
+  parseAutomationAllowlist
+} from './server/automation-engine.js';
 import { createSqliteWorkspaceStore } from './server/workspace-store.js';
 import { createWorkspaceOperations } from './server/workspace-operations.js';
 import { createNodeHandler } from './server/node-adapter.js';
@@ -71,10 +74,7 @@ const configuredAutomationConfidence = Number.parseFloat(
 );
 const automationEngine = createAutomationEngine({
   mode: process.env.AUTOMATION_MODE || 'dry-run',
-  allowlist: (process.env.AUTOMATION_ALLOWLIST || '')
-    .split(',')
-    .map((value) => value.replace(/\D/g, ''))
-    .filter(Boolean),
+  allowlist: parseAutomationAllowlist(process.env.AUTOMATION_ALLOWLIST),
   minConfidence: Number.isFinite(configuredAutomationConfidence)
     ? configuredAutomationConfidence
     : 0.9,

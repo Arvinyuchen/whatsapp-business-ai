@@ -2,15 +2,22 @@ export async function sendWhatsAppReply({
   token,
   conversationId,
   to,
+  recipient,
   body,
   idempotencyKey = crypto.randomUUID(),
   fetchImpl = fetch
 }) {
-  const recipient = String(to || '').trim();
+  const phoneNumber = String(to || '').trim();
+  const userId = String(recipient || '').trim();
   const reply = String(body || '').trim();
 
   if (!token) throw new Error('Load the live workspace before sending a WhatsApp reply.');
-  if (!/^\d{8,15}$/.test(recipient)) throw new Error('This conversation has an invalid WhatsApp recipient.');
+  const phoneIsValid = !phoneNumber || /^\d{8,15}$/.test(phoneNumber);
+  const bsuidIsValid = !userId
+    || /^[A-Z]{2}\.(?:ENT\.)?[A-Za-z0-9]{1,128}$/.test(userId);
+  if ((!phoneNumber && !userId) || !phoneIsValid || !bsuidIsValid) {
+    throw new Error('This conversation has an invalid WhatsApp recipient.');
+  }
   if (!reply) throw new Error('Reply cannot be empty.');
 
   const response = await fetchImpl('/api/whatsapp/messages', {
@@ -21,7 +28,8 @@ export async function sendWhatsAppReply({
       'idempotency-key': idempotencyKey
     },
     body: JSON.stringify({
-      to: recipient,
+      ...(phoneNumber ? { to: phoneNumber } : {}),
+      ...(userId ? { recipient: userId } : {}),
       body: reply,
       ...(conversationId ? { conversationId } : {})
     })

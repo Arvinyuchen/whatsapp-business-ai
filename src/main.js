@@ -9,6 +9,11 @@ import {
   loadLiveWorkspace
 } from './live-workspace.js';
 import { presentWhatsAppEvent, sortWhatsAppEvents } from './whatsapp-activity.js';
+import {
+  conversationWhatsAppAddress,
+  normalizeWhatsAppAddress,
+  whatsappRecipientLabel
+} from './whatsapp-identity.js';
 import { sendWhatsAppReply } from './whatsapp-reply.js';
 
 const workflowLabels = {
@@ -612,26 +617,22 @@ async function loadTemplates({ useEnteredToken = false } = {}) {
   }
 }
 
-function normalizeWhatsAppRecipient(value) {
-  const digits = value.replace(/\D/g, '');
-  return digits.startsWith('610') ? `61${digits.slice(3)}` : digits;
-}
-
 async function sendSelectedTemplate() {
   const template = uiState.templates.find(({ id }) => id === elements.templateSelect.value);
-  const recipient = normalizeWhatsAppRecipient(elements.templateRecipient.value);
+  const address = normalizeWhatsAppAddress(elements.templateRecipient.value);
   if (!template || template.status !== 'APPROVED') {
     setTemplateFeedback('Choose an approved template before sending.', 'warning');
     return;
   }
-  if (!/^\d{8,15}$/.test(recipient)) {
-    setTemplateFeedback('Enter a recipient with country code, such as 61449550842.', 'warning');
+  if (!address) {
+    setTemplateFeedback('Enter an international phone number or a valid BSUID.', 'warning');
     elements.templateRecipient.focus();
     return;
   }
+  const recipientLabel = address.to ? `+${address.to}` : address.recipient;
   const confirmed = await requestSendConfirmation({
     title: `Send ${template.name}?`,
-    recipient: `+${recipient}`,
+    recipient: recipientLabel,
     body: template.body || template.name,
     confirmLabel: 'Send template'
   });
@@ -639,7 +640,7 @@ async function sendSelectedTemplate() {
   const requestScope = 'template-send';
   const idempotencyKey = requestKeys.get(
     requestScope,
-    JSON.stringify([recipient, template.name, template.language])
+    JSON.stringify([address, template.name, template.language])
   );
 
   elements.sendTemplateButton.disabled = true;
@@ -653,7 +654,7 @@ async function sendSelectedTemplate() {
         'idempotency-key': idempotencyKey
       },
       body: JSON.stringify({
-        to: recipient,
+        ...address,
         type: 'template',
         template: { name: template.name, language: template.language }
       })
@@ -662,7 +663,7 @@ async function sendSelectedTemplate() {
     if (!response.ok) throw new Error(payload.error || 'Template could not be sent.');
 
     requestKeys.complete(requestScope);
-    setTemplateFeedback(`${template.name} accepted by WhatsApp for ${recipient}.`, 'success');
+    setTemplateFeedback(`${template.name} accepted by WhatsApp for ${recipientLabel}.`, 'success');
     showToast('Approved template sent to WhatsApp.');
   } catch (error) {
     setTemplateFeedback(error.message, 'danger');
@@ -758,9 +759,12 @@ elements.sendButton.addEventListener('click', async () => {
         return;
       }
 
+      const address = conversationWhatsAppAddress(conversation);
+      if (!address) throw new Error('This conversation has an invalid WhatsApp recipient.');
+
       const confirmed = await requestSendConfirmation({
         title: 'Send this reply now?',
-        recipient: `${conversation.name} · +${conversation.sourceId}`,
+        recipient: `${conversation.name} · ${whatsappRecipientLabel(conversation)}`,
         body: reply,
         confirmLabel: 'Send live reply'
       });
@@ -772,11 +776,11 @@ elements.sendButton.addEventListener('click', async () => {
       const result = await sendWhatsAppReply({
         token: uiState.operatorToken,
         conversationId: conversation.id,
-        to: conversation.sourceId,
+        ...address,
         body: reply,
         idempotencyKey: requestKeys.get(
           requestScope,
-          JSON.stringify([conversation.sourceId, reply])
+          JSON.stringify([address, reply])
         )
       });
       requestKeys.complete(requestScope);

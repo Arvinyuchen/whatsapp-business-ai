@@ -74,7 +74,7 @@ Seeded demo conversations remain browser-local. Conversations created from signe
    - `OPENAI_MODEL` (optional; defaults to `gpt-5.6-terra` for the balanced drafting role)
    - `OPENAI_REQUEST_TIMEOUT_MS` (optional; defaults to 20000 milliseconds)
    - `AUTOMATION_MODE` (`dry-run` by default; use `live` only after controlled acceptance)
-   - `AUTOMATION_ALLOWLIST` (comma-separated international phone numbers; required for every evaluated recipient)
+   - `AUTOMATION_ALLOWLIST` (comma-separated international phone numbers or BSUIDs; required for every evaluated recipient)
    - `AUTOMATION_MIN_CONFIDENCE` (0–1; defaults to `0.9`)
    - `AUTOMATION_INTERVAL_MS` (local worker interval; defaults to 5000 milliseconds)
 
@@ -99,7 +99,7 @@ Never commit `.env` or production credentials. The Graph API version defaults to
 1. Keep `AUTOMATION_MODE=dry-run`, start the server, open **Automations**, and load the workspace with an admin or agent token.
 2. Confirm the dashboard shows **DRY-RUN**, the expected confidence threshold, and the intended allowlist count. New inbound messages will create durable blocked or dry-run decisions without sending.
 3. Add `OPENAI_API_KEY` for model-generated structured drafts. The no-key local fallback always requires a human, so it can never auto-send.
-4. Put only controlled international-format recipients in `AUTOMATION_ALLOWLIST`, restart, and inspect representative dry-run decisions.
+4. Put only controlled international-format phone numbers or BSUIDs in `AUTOMATION_ALLOWLIST`, restart, and inspect representative dry-run decisions.
 5. Change `AUTOMATION_MODE=live` only after those checks. Live mode still refuses non-allowlisted, low-confidence, or human-required drafts and never retries a failed or ambiguous send automatically.
 
 This works from the local server and does not require deploying the dashboard. The server, HTTPS webhook tunnel, and Meta app access must remain available for real inbound customer traffic.

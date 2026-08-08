@@ -11,17 +11,78 @@ function emptyWorkspace() {
   return { events: [], conversations: [], audits: [] };
 }
 
+function isPhoneNumber(value) {
+  return /^\d{8,15}$/.test(String(value || ''));
+}
+
+function isBsuid(value) {
+  return /^[A-Z]{2}\.(?:ENT\.)?[A-Za-z0-9]{1,128}$/.test(String(value || ''));
+}
+
+function compactIdentity(identity = {}) {
+  return Object.fromEntries(
+    Object.entries(identity).filter(([, value]) => typeof value === 'string' && value)
+  );
+}
+
+function identityFromIdentifier(identifier) {
+  if (isPhoneNumber(identifier)) return { phoneNumber: identifier };
+  if (isBsuid(identifier)) {
+    return identifier.includes('.ENT.')
+      ? { parentUserId: identifier }
+      : { userId: identifier };
+  }
+  return {};
+}
+
+function eventIdentity(event) {
+  const inferred = identityFromIdentifier(event?.from);
+  return compactIdentity({
+    ...inferred,
+    phoneNumber: event?.phoneNumber || inferred.phoneNumber,
+    userId: event?.userId || inferred.userId,
+    parentUserId: event?.parentUserId || inferred.parentUserId,
+    username: event?.username
+  });
+}
+
+function mergeIdentity(current, incoming) {
+  return compactIdentity({ ...current, ...incoming });
+}
+
+function identityAliases(conversation) {
+  return new Set([
+    conversation?.sourceId,
+    conversation?.identity?.phoneNumber,
+    conversation?.identity?.userId,
+    conversation?.identity?.parentUserId
+  ].filter(Boolean));
+}
+
+function identitiesOverlap(conversation, incoming) {
+  const aliases = identityAliases(conversation);
+  return Object.entries(incoming).some(([key, value]) => key !== 'username' && aliases.has(value));
+}
+
 function normalizeWorkspace(workspace) {
   return {
     events: Array.isArray(workspace?.events) ? workspace.events : [],
     conversations: Array.isArray(workspace?.conversations)
-      ? workspace.conversations.map((conversation) => (
-          conversation.source === 'whatsapp'
-          && conversation.intent === 'New inbound message'
-          && conversation.confidence === 100
+      ? workspace.conversations.map((conversation) => {
+          const normalized = conversation.source === 'whatsapp'
+            && conversation.intent === 'New inbound message'
+            && conversation.confidence === 100
             ? { ...conversation, confidence: 0 }
-            : conversation
-        ))
+            : conversation;
+          if (normalized.source !== 'whatsapp') return normalized;
+          return {
+            ...normalized,
+            identity: mergeIdentity(
+              identityFromIdentifier(normalized.sourceId),
+              normalized.identity
+            )
+          };
+        })
       : [],
     audits: Array.isArray(workspace?.audits) ? workspace.audits : []
   };
@@ -59,6 +120,7 @@ function createConversation(event) {
     id: `whatsapp:${event.from}`,
     source: 'whatsapp',
     sourceId: event.from,
+    identity: eventIdentity(event),
     processedMessageIds: event.messageId ? [event.messageId] : [],
     name: contactName,
     company: 'WhatsApp contact',
@@ -102,8 +164,11 @@ function applyInboundEvents(workspace, events) {
     .sort((left, right) => eventTime(left.event, left.index) - eventTime(right.event, right.index));
 
   for (const { event } of chronological) {
+    const incomingIdentity = eventIdentity(event);
     const existingIndex = workspace.conversations.findIndex((conversation) => {
-      return conversation.source === 'whatsapp' && conversation.sourceId === event.from;
+      return conversation.source === 'whatsapp'
+        && (conversation.sourceId === event.from
+          || identitiesOverlap(conversation, incomingIdentity));
     });
     const existing = workspace.conversations[existingIndex];
     if (existing?.processedMessageIds?.includes(event.messageId)) continue;
@@ -116,6 +181,7 @@ function applyInboundEvents(workspace, events) {
 
     existing.processedMessageIds ??= [];
     if (event.messageId) existing.processedMessageIds.push(event.messageId);
+    existing.identity = mergeIdentity(existing.identity, incomingIdentity);
     existing.name = event.contactName || existing.name;
     existing.status = 'New live message';
     existing.workflow = 'open';
@@ -198,12 +264,14 @@ function addEvents(workspace, incomingEvents, limit) {
   return { added: addedEvents.length, duplicates, conversationsChanged };
 }
 
-function recordReply(workspace, { conversationId, to, body, messageId, actor }) {
+function recordReply(workspace, { conversationId, to, recipient, body, messageId, actor }) {
   const reply = String(body || '').trim();
   if (!reply) throw new Error('Reply cannot be empty.');
   const conversation = workspace.conversations.find(({ id }) => id === conversationId);
   if (!conversation) throw Object.assign(new Error('Live conversation not found.'), { status: 404 });
-  if (conversation.sourceId !== to) {
+  const addresses = [to, recipient].filter(Boolean);
+  const aliases = identityAliases(conversation);
+  if (!addresses.length || addresses.some((address) => !aliases.has(address))) {
     throw Object.assign(new Error('Reply recipient does not match the conversation.'), { status: 400 });
   }
   if (conversation.activity?.some((activity) => activity.messageId === messageId)) return conversation;
@@ -224,7 +292,7 @@ function recordReply(workspace, { conversationId, to, body, messageId, actor }) 
       id: `operator:reply:${messageId}`,
       type: 'operator.reply',
       conversationId,
-      recipient: to,
+      recipient: to || recipient,
       messageId,
       actor,
       timestamp: new Date().toISOString()

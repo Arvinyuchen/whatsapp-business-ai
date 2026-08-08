@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createAutomationEngine } from '../server/automation-engine.js';
+import {
+  createAutomationEngine,
+  parseAutomationAllowlist
+} from '../server/automation-engine.js';
 import { createMemoryWorkspaceStore } from '../server/workspace-store.js';
 
 const inbound = {
@@ -10,6 +13,13 @@ const inbound = {
   from: '8619566373059',
   text: 'What time do you close?'
 };
+
+test('automation allowlist preserves phone numbers and BSUIDs from configuration', () => {
+  assert.deepEqual(
+    parseAutomationAllowlist('8619566373059, CN.13491208655302741918, invalid '),
+    ['8619566373059', 'CN.13491208655302741918']
+  );
+});
 
 async function createHarness({ mode = 'dry-run', allowlist = ['8619566373059'], draft } = {}) {
   const workspaceStore = createMemoryWorkspaceStore();
@@ -94,6 +104,87 @@ test('live mode sends once only after all guards pass', async () => {
   assert.deepEqual(harness.counts(), { generated: 1, sent: 1 });
   assert.equal(workspace.conversations[0].workflow, 'resolved');
   assert.deepEqual(workspace.conversations[0].messages.at(-1), ['agent', 'We close at 5pm.']);
+});
+
+test('live mode allows and replies to a BSUID-only controlled recipient', async () => {
+  const userId = 'CN.13491208655302741918';
+  const workspaceStore = createMemoryWorkspaceStore();
+  await workspaceStore.applyEvents([{
+    ...inbound,
+    messageId: 'wamid.automation.bsuid',
+    from: userId,
+    userId,
+    username: 'username_customer'
+  }]);
+  let sentRequest;
+  const engine = createAutomationEngine({
+    mode: 'live',
+    allowlist: [userId],
+    minConfidence: 0.9,
+    workspaceStore,
+    replyGenerator: {
+      generate: async () => ({
+        body: 'We close at 5pm.',
+        confidence: 0.96,
+        requiresHuman: false
+      })
+    },
+    whatsappClient: {
+      sendText: async (request) => {
+        sentRequest = request;
+        return { messageId: 'wamid.automation.bsuid-outbound' };
+      }
+    }
+  });
+
+  const decisions = await engine.run();
+
+  assert.equal(decisions[0].outcome, 'sent');
+  assert.deepEqual(sentRequest, {
+    recipient: userId,
+    body: 'We close at 5pm.'
+  });
+});
+
+test('phone allowlist remains valid when a conversation gains a BSUID alias', async () => {
+  const userId = 'CN.13491208655302741918';
+  const workspaceStore = createMemoryWorkspaceStore();
+  await workspaceStore.applyEvents([{
+    ...inbound,
+    messageId: 'wamid.automation.migrated-identity',
+    from: userId,
+    phoneNumber: '8619566373059',
+    userId
+  }]);
+  let sentRequest;
+  const engine = createAutomationEngine({
+    mode: 'live',
+    allowlist: ['8619566373059'],
+    minConfidence: 0.9,
+    workspaceStore,
+    replyGenerator: {
+      generate: async () => ({
+        body: 'We close at 5pm.',
+        confidence: 0.96,
+        requiresHuman: false
+      })
+    },
+    whatsappClient: {
+      sendText: async (request) => {
+        sentRequest = request;
+        return { messageId: 'wamid.automation.migrated-outbound' };
+      }
+    }
+  });
+
+  const decisions = await engine.run();
+
+  assert.equal(decisions[0].outcome, 'sent');
+  assert.deepEqual(sentRequest, {
+    to: '8619566373059',
+    recipient: userId,
+    body: 'We close at 5pm.'
+  });
 });
 
 test('failed live sends are audited and never retried automatically', async () => {

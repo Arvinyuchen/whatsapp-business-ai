@@ -251,6 +251,47 @@ test('live reply is recorded once in the shared workspace with an idempotent ret
   assert.deepEqual(workspace.audits[0].actor, { id: 'legacy-admin', role: 'admin' });
 });
 
+test('live reply records a BSUID-only conversation after Meta accepts it', async () => {
+  const userId = 'CN.13491208655302741918';
+  const workspaceStore = createMemoryWorkspaceStore();
+  await workspaceStore.applyEvents([{
+    type: 'message.received',
+    messageId: 'wamid.inbound.bsuid-shared',
+    from: userId,
+    userId,
+    username: 'username_customer',
+    text: 'Can you help without my phone number?'
+  }]);
+  const app = createApp({
+    adminToken: 'operator-secret',
+    workspaceStore,
+    whatsappClient: {
+      getStatus: () => ({ configured: true, graphVersion: 'v25.0', missing: [] }),
+      sendText: async () => ({ messageId: 'wamid.outbound.bsuid-shared' })
+    },
+    whatsappWebhook: { getStatus: () => ({ configured: true, missing: [] }) }
+  });
+
+  const response = await app.handle(new Request('http://localhost/api/whatsapp/messages', {
+    method: 'POST',
+    headers: {
+      authorization: 'Bearer operator-secret',
+      'content-type': 'application/json',
+      'idempotency-key': 'shared-bsuid-reply'
+    },
+    body: JSON.stringify({
+      conversationId: `whatsapp:${userId}`,
+      recipient: userId,
+      body: 'Yes, I can help.'
+    })
+  }));
+
+  const payload = await response.json();
+  assert.equal(response.status, 201);
+  assert.equal(payload.conversation.workflow, 'resolved');
+  assert.deepEqual(payload.conversation.messages.at(-1), ['agent', 'Yes, I can help.']);
+});
+
 test('operator actions update live conversations on the server', async () => {
   const workspaceStore = createMemoryWorkspaceStore();
   await workspaceStore.applyEvents([{

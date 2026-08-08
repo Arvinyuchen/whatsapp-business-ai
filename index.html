@@ -302,7 +302,7 @@
         <div class="template-ledger" id="templateList" aria-live="polite"></div>
         <form class="template-send" id="templateSendForm" hidden>
           <label for="templateRecipient">Recipient</label>
-          <input id="templateRecipient" name="templateRecipient" inputmode="tel" autocomplete="tel" placeholder="61449550842">
+          <input id="templateRecipient" name="templateRecipient" inputmode="text" autocomplete="off" placeholder="61449550842 or CN.…">
           <label for="templateSelect">Approved template</label>
           <select id="templateSelect" name="templateSelect"></select>
           <div class="template-preview" id="templatePreview"></div>
@@ -336,6 +336,6 @@
     </dialog>
 
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-    <script type="module" src="./src/main.js?v=5"></script>
+    <script type="module" src="./src/main.js?v=6"></script>
   </body>
 </html>

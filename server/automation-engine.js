@@ -6,6 +6,39 @@ function latestInboundId(conversation) {
   return conversation.processedMessageIds?.at(-1) || null;
 }
 
+function isMessageAddress(value) {
+  return /^\d{8,15}$/.test(value)
+    || /^[A-Z]{2}\.(?:ENT\.)?[A-Za-z0-9]{1,128}$/.test(value);
+}
+
+export function parseAutomationAllowlist(value) {
+  return String(value || '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(isMessageAddress);
+}
+
+function conversationAliases(conversation) {
+  return [
+    conversation.sourceId,
+    conversation.identity?.phoneNumber,
+    conversation.identity?.userId,
+    conversation.identity?.parentUserId
+  ].filter(Boolean);
+}
+
+function conversationAddress(conversation) {
+  const phoneNumber = conversation.identity?.phoneNumber
+    || (/^\d{8,15}$/.test(conversation.sourceId) ? conversation.sourceId : null);
+  const userId = conversation.identity?.userId
+    || conversation.identity?.parentUserId
+    || (!phoneNumber ? conversation.sourceId : null);
+  return {
+    ...(phoneNumber ? { to: phoneNumber } : {}),
+    ...(userId ? { recipient: userId } : {})
+  };
+}
+
 function baseAudit({ conversation, inboundMessageId, now }) {
   return {
     id: `automation:${conversation.id}:${inboundMessageId}`,
@@ -29,7 +62,7 @@ export function createAutomationEngine({
   logger = console
 }) {
   const configuredMode = normalizeMode(mode);
-  const allowedRecipients = new Set(allowlist.filter((value) => /^\d{8,15}$/.test(value)));
+  const allowedRecipients = new Set(allowlist.filter(isMessageAddress));
   const threshold = Number.isFinite(minConfidence)
     ? Math.min(1, Math.max(0, minConfidence))
     : 0.9;
@@ -60,7 +93,7 @@ export function createAutomationEngine({
     if (configuredMode === 'off') {
       return recordBlocked(conversation, inboundMessageId, 'automation_off');
     }
-    if (!allowedRecipients.has(conversation.sourceId)) {
+    if (!conversationAliases(conversation).some((alias) => allowedRecipients.has(alias))) {
       return recordBlocked(conversation, inboundMessageId, 'recipient_not_allowlisted');
     }
     if (conversation.workflow !== 'open') {
@@ -116,13 +149,14 @@ export function createAutomationEngine({
     };
     await workspaceStore.recordAudit(sendingAudit);
     try {
+      const address = conversationAddress(conversation);
       const sent = await whatsappClient.sendText({
-        to: conversation.sourceId,
+        ...address,
         body: draft.body
       });
       await workspaceStore.recordReply({
         conversationId: conversation.id,
-        to: conversation.sourceId,
+        ...address,
         body: draft.body,
         messageId: sent.messageId
       });
