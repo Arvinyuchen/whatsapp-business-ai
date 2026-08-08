@@ -16,17 +16,30 @@ function normalizeEvents(payload) {
   for (const entry of payload.entry || []) {
     for (const change of entry.changes || []) {
       const value = change.value || {};
-      const contacts = new Map(
-        (value.contacts || []).map((contact) => [contact.wa_id, contact])
-      );
+      const contacts = value.contacts || [];
 
       for (const message of value.messages || []) {
         if (message.type !== 'text') continue;
+        const contact = contacts.find((candidate) => (
+          (message.from && candidate.wa_id === message.from)
+          || (message.from_user_id && candidate.user_id === message.from_user_id)
+          || (message.from_parent_user_id
+            && candidate.parent_user_id === message.from_parent_user_id)
+        ));
+        const phoneNumber = message.from || contact?.wa_id;
+        const userId = message.from_user_id || contact?.user_id;
+        const parentUserId = message.from_parent_user_id || contact?.parent_user_id;
+        const username = contact?.profile?.username;
+        const from = userId || phoneNumber || parentUserId;
         events.push({
           type: 'message.received',
           messageId: message.id,
-          from: message.from,
-          contactName: contacts.get(message.from)?.profile?.name || message.from,
+          from,
+          ...(phoneNumber && from !== phoneNumber ? { phoneNumber } : {}),
+          ...(userId ? { userId } : {}),
+          ...(parentUserId ? { parentUserId } : {}),
+          ...(username ? { username } : {}),
+          contactName: contact?.profile?.name || username || phoneNumber || userId || parentUserId,
           text: message.text?.body || '',
           timestamp: message.timestamp,
           phoneNumberId: value.metadata?.phone_number_id
@@ -34,11 +47,26 @@ function normalizeEvents(payload) {
       }
 
       for (const status of value.statuses || []) {
+        const contact = contacts.find((candidate) => (
+          (status.recipient_id && candidate.wa_id === status.recipient_id)
+          || (status.recipient_user_id && candidate.user_id === status.recipient_user_id)
+          || (status.recipient_parent_user_id
+            && candidate.parent_user_id === status.recipient_parent_user_id)
+        ));
+        const phoneNumber = status.recipient_id || contact?.wa_id;
+        const userId = status.recipient_user_id || contact?.user_id;
+        const parentUserId = status.recipient_parent_user_id || contact?.parent_user_id;
+        const username = contact?.profile?.username;
+        const recipient = userId || phoneNumber || parentUserId;
         events.push({
           type: 'message.status',
           messageId: status.id,
           status: status.status,
-          recipient: status.recipient_id,
+          recipient,
+          ...(phoneNumber && recipient !== phoneNumber ? { phoneNumber } : {}),
+          ...(userId ? { userId } : {}),
+          ...(parentUserId ? { parentUserId } : {}),
+          ...(username ? { username } : {}),
           timestamp: status.timestamp,
           conversationId: status.conversation?.id,
           phoneNumberId: value.metadata?.phone_number_id

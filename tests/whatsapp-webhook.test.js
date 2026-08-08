@@ -64,6 +64,101 @@ test('webhook accepts a signed inbound text message as a normalized event', () =
   });
 });
 
+test('webhook accepts a BSUID-only inbound message when the phone number is unavailable', () => {
+  const appSecret = 'app-secret';
+  const webhook = createWhatsAppWebhook({
+    verifyToken: 'local-verify-token',
+    appSecret
+  });
+  const rawBody = Buffer.from(JSON.stringify({
+    object: 'whatsapp_business_account',
+    entry: [{
+      id: 'waba-123',
+      changes: [{
+        field: 'messages',
+        value: {
+          messaging_product: 'whatsapp',
+          metadata: { phone_number_id: 'phone-123' },
+          contacts: [{
+            user_id: 'CN.13491208655302741918',
+            profile: { name: 'Username customer', username: 'username_customer' }
+          }],
+          messages: [{
+            from_user_id: 'CN.13491208655302741918',
+            id: 'wamid.bsuid-only',
+            timestamp: '1785900001',
+            type: 'text',
+            text: { body: 'Can I order without sharing my number?' }
+          }]
+        }
+      }]
+    }]
+  }));
+  const signature = `sha256=${createHmac('sha256', appSecret).update(rawBody).digest('hex')}`;
+
+  const result = webhook.receive({ rawBody, signature });
+
+  assert.deepEqual(result, {
+    accepted: true,
+    events: [{
+      type: 'message.received',
+      messageId: 'wamid.bsuid-only',
+      from: 'CN.13491208655302741918',
+      userId: 'CN.13491208655302741918',
+      username: 'username_customer',
+      contactName: 'Username customer',
+      text: 'Can I order without sharing my number?',
+      timestamp: '1785900001',
+      phoneNumberId: 'phone-123'
+    }]
+  });
+});
+
+test('webhook preserves phone and BSUID aliases for the same inbound customer', () => {
+  const appSecret = 'app-secret';
+  const webhook = createWhatsAppWebhook({ verifyToken: 'verify', appSecret });
+  const rawBody = Buffer.from(JSON.stringify({
+    object: 'whatsapp_business_account',
+    entry: [{
+      changes: [{
+        field: 'messages',
+        value: {
+          metadata: { phone_number_id: 'phone-123' },
+          contacts: [{
+            wa_id: '8619566373059',
+            user_id: 'CN.13491208655302741918',
+            profile: { name: 'Arvin', username: 'arvin_customer' }
+          }],
+          messages: [{
+            from: '8619566373059',
+            from_user_id: 'CN.13491208655302741918',
+            id: 'wamid.phone-and-bsuid',
+            timestamp: '1785900002',
+            type: 'text',
+            text: { body: 'Hello from both identities' }
+          }]
+        }
+      }]
+    }]
+  }));
+  const signature = `sha256=${createHmac('sha256', appSecret).update(rawBody).digest('hex')}`;
+
+  const result = webhook.receive({ rawBody, signature });
+
+  assert.deepEqual(result.events, [{
+    type: 'message.received',
+    messageId: 'wamid.phone-and-bsuid',
+    from: 'CN.13491208655302741918',
+    phoneNumber: '8619566373059',
+    userId: 'CN.13491208655302741918',
+    username: 'arvin_customer',
+    contactName: 'Arvin',
+    text: 'Hello from both identities',
+    timestamp: '1785900002',
+    phoneNumberId: 'phone-123'
+  }]);
+});
+
 test('webhook normalizes outbound delivery status updates', () => {
   const appSecret = 'app-secret';
   const webhook = createWhatsAppWebhook({ verifyToken: 'verify', appSecret });
@@ -96,6 +191,48 @@ test('webhook normalizes outbound delivery status updates', () => {
     recipient: '61400000000',
     timestamp: '1785900100',
     conversationId: 'conversation-123',
+    phoneNumberId: 'phone-123'
+  }]);
+});
+
+test('webhook normalizes BSUID delivery status when recipient phone is unavailable', () => {
+  const appSecret = 'app-secret';
+  const webhook = createWhatsAppWebhook({ verifyToken: 'verify', appSecret });
+  const rawBody = Buffer.from(JSON.stringify({
+    object: 'whatsapp_business_account',
+    entry: [{
+      changes: [{
+        field: 'messages',
+        value: {
+          metadata: { phone_number_id: 'phone-123' },
+          contacts: [{
+            user_id: 'CN.13491208655302741918',
+            profile: { name: 'Username customer', username: 'username_customer' }
+          }],
+          statuses: [{
+            id: 'wamid.bsuid-outbound',
+            status: 'delivered',
+            timestamp: '1785900101',
+            recipient_user_id: 'CN.13491208655302741918',
+            conversation: { id: 'conversation-bsuid' }
+          }]
+        }
+      }]
+    }]
+  }));
+  const signature = `sha256=${createHmac('sha256', appSecret).update(rawBody).digest('hex')}`;
+
+  const result = webhook.receive({ rawBody, signature });
+
+  assert.deepEqual(result.events, [{
+    type: 'message.status',
+    messageId: 'wamid.bsuid-outbound',
+    status: 'delivered',
+    recipient: 'CN.13491208655302741918',
+    userId: 'CN.13491208655302741918',
+    username: 'username_customer',
+    timestamp: '1785900101',
+    conversationId: 'conversation-bsuid',
     phoneNumberId: 'phone-123'
   }]);
 });
