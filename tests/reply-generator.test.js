@@ -86,6 +86,43 @@ test('OpenAI adapter does not expose provider errors to operators', async () => 
   );
 });
 
+test('enabled local acknowledgement safely covers an OpenAI outage', async () => {
+  const generator = createReplyGenerator({
+    apiKey: 'openai-secret',
+    model: 'gpt-5.6-terra',
+    acknowledgementFallbackEnabled: true,
+    fetchAdapter: async () => Response.json({
+      error: { code: 'credit_balance_exhausted' }
+    }, { status: 429 })
+  });
+
+  assert.deepEqual(generator.getStatus(), {
+    configured: true,
+    provider: 'openai',
+    model: 'gpt-5.6-terra',
+    fallback: 'local_acknowledgement'
+  });
+  assert.deepEqual(await generator.generate({ conversation, tone: 'helpful' }), {
+    body: 'Thanks for contacting Nika Flame. We received your message and a team member will reply shortly.',
+    provider: 'local_acknowledgement',
+    model: null,
+    confidence: 1,
+    requiresHuman: false
+  });
+});
+
+test('enabled local acknowledgement works without an OpenAI key', async () => {
+  const generator = createReplyGenerator({ acknowledgementFallbackEnabled: true });
+
+  assert.deepEqual(await generator.generate({ conversation }), {
+    body: 'Thanks for contacting Nika Flame. We received your message and a team member will reply shortly.',
+    provider: 'local_acknowledgement',
+    model: null,
+    confidence: 1,
+    requiresHuman: false
+  });
+});
+
 test('OpenAI adapter rejects empty model output', async () => {
   const generator = createOpenAIReplyGenerator({
     apiKey: 'openai-secret',

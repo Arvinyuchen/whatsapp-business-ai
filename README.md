@@ -77,6 +77,7 @@ Seeded demo conversations remain browser-local. Conversations created from signe
    - `AUTOMATION_ALLOWLIST` (comma-separated international phone numbers or BSUIDs; required for every evaluated recipient)
    - `AUTOMATION_MIN_CONFIDENCE` (0–1; defaults to `0.9`)
    - `AUTOMATION_INTERVAL_MS` (local worker interval; defaults to 5000 milliseconds)
+   - `AUTOMATION_ACKNOWLEDGEMENT_ENABLED` (`false` by default; when `true`, uses a fixed Nika Flame receipt acknowledgement if AI drafting is unavailable, while retaining every automation guard)
 
 3. Start the app with `npm run dev`, then open the URL printed in the terminal. The **Connect WhatsApp** dialog reports any missing values.
 
@@ -101,6 +102,8 @@ Never commit `.env` or production credentials. The Graph API version defaults to
 3. Add `OPENAI_API_KEY` for model-generated structured drafts. The no-key local fallback always requires a human, so it can never auto-send.
 4. Put only controlled international-format phone numbers or BSUIDs in `AUTOMATION_ALLOWLIST`, restart, and inspect representative dry-run decisions.
 5. Change `AUTOMATION_MODE=live` only after those checks. Live mode still refuses non-allowlisted, low-confidence, or human-required drafts and never retries a failed or ambiguous send automatically.
+
+For a controlled pilot that must remain responsive during an AI outage, set `AUTOMATION_ACKNOWLEDGEMENT_ENABLED=true`. The fallback only confirms receipt and promises no product, price, stock, delivery, payment, or account action. It remains restricted by the same allowlist and send/idempotency safeguards.
 
 This works from the local server and does not require deploying the dashboard. The server, HTTPS webhook tunnel, and Meta app access must remain available for real inbound customer traffic.
 

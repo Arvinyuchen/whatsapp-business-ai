@@ -187,6 +187,45 @@ test('phone allowlist remains valid when a conversation gains a BSUID alias', as
   });
 });
 
+test('local acknowledgement fallback sends only once per conversation', async () => {
+  const workspaceStore = createMemoryWorkspaceStore();
+  await workspaceStore.applyEvents([inbound]);
+  let sent = 0;
+  const engine = createAutomationEngine({
+    mode: 'live',
+    allowlist: ['8619566373059'],
+    minConfidence: 0.9,
+    workspaceStore,
+    replyGenerator: {
+      generate: async () => ({
+        body: 'Thanks for contacting Nika Flame. We received your message and a team member will reply shortly.',
+        provider: 'local_acknowledgement',
+        confidence: 1,
+        requiresHuman: false
+      })
+    },
+    whatsappClient: {
+      sendText: async () => {
+        sent += 1;
+        return { messageId: `wamid.acknowledgement.${sent}` };
+      }
+    }
+  });
+
+  const first = await engine.run();
+  await workspaceStore.applyEvents([{
+    ...inbound,
+    messageId: 'wamid.automation.inbound.followup',
+    text: 'One more detail.'
+  }]);
+  const followup = await engine.run();
+
+  assert.equal(first[0].outcome, 'sent');
+  assert.equal(followup[0].outcome, 'blocked');
+  assert.equal(followup[0].reason, 'acknowledgement_already_sent');
+  assert.equal(sent, 1);
+});
+
 test('failed live sends are audited and never retried automatically', async () => {
   const workspaceStore = createMemoryWorkspaceStore();
   await workspaceStore.applyEvents([inbound]);

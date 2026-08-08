@@ -36,6 +36,7 @@ const configuredOpenAITimeout = Number.parseInt(process.env.OPENAI_REQUEST_TIMEO
 const replyGenerator = createReplyGenerator({
   apiKey: process.env.OPENAI_API_KEY,
   model: process.env.OPENAI_MODEL || 'gpt-5.6-terra',
+  acknowledgementFallbackEnabled: process.env.AUTOMATION_ACKNOWLEDGEMENT_ENABLED === 'true',
   requestTimeoutMs: Number.isSafeInteger(configuredOpenAITimeout) && configuredOpenAITimeout > 0
     ? configuredOpenAITimeout
     : 20_000

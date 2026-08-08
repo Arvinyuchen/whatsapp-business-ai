@@ -84,7 +84,7 @@ export function createAutomationEngine({
     });
   }
 
-  async function processConversation(conversation, priorAuditIds) {
+  async function processConversation(conversation, priorAuditIds, acknowledgedConversationIds) {
     const inboundMessageId = latestInboundId(conversation);
     if (!inboundMessageId) return null;
     const auditId = `automation:${conversation.id}:${inboundMessageId}`;
@@ -109,6 +109,18 @@ export function createAutomationEngine({
         outcome: 'failed',
         reason: 'draft_generation_failed',
         detail: error.message
+      });
+    }
+
+    if (draft.provider === 'local_acknowledgement'
+      && acknowledgedConversationIds.has(conversation.id)) {
+      return workspaceStore.recordAudit({
+        ...baseAudit({ conversation, inboundMessageId, now }),
+        outcome: 'blocked',
+        reason: 'acknowledgement_already_sent',
+        confidence: draft.confidence,
+        draft: draft.body,
+        draftProvider: draft.provider
       });
     }
 
@@ -145,7 +157,8 @@ export function createAutomationEngine({
       outcome: 'sending',
       reason: 'all_guards_passed',
       confidence: draft.confidence,
-      draft: draft.body
+      draft: draft.body,
+      ...(draft.provider ? { draftProvider: draft.provider } : {})
     };
     await workspaceStore.recordAudit(sendingAudit);
     try {
@@ -180,13 +193,28 @@ export function createAutomationEngine({
   async function runOnce() {
     const workspace = await workspaceStore.getWorkspace();
     const priorAuditIds = new Set(workspace.audits.map(({ id }) => id));
+    const acknowledgedConversationIds = new Set(
+      workspace.audits
+        .filter(({ outcome, draftProvider }) => (
+          outcome === 'sent' && draftProvider === 'local_acknowledgement'
+        ))
+        .map(({ conversationId }) => conversationId)
+    );
     const candidates = workspace.conversations.filter(({ source }) => source === 'whatsapp');
     const decisions = [];
     for (const conversation of candidates) {
-      const decision = await processConversation(conversation, priorAuditIds);
+      const decision = await processConversation(
+        conversation,
+        priorAuditIds,
+        acknowledgedConversationIds
+      );
       if (decision) {
         decisions.push(decision);
         priorAuditIds.add(decision.id);
+        if (decision.outcome === 'sent'
+          && decision.draftProvider === 'local_acknowledgement') {
+          acknowledgedConversationIds.add(decision.conversationId);
+        }
       }
     }
     return decisions;

@@ -1,4 +1,5 @@
 const validTones = new Set(['helpful', 'sales', 'ops']);
+const acknowledgementBody = 'Thanks for contacting Nika Flame. We received your message and a team member will reply shortly.';
 
 function normalizeTone(tone) {
   return validTones.has(tone) ? tone : 'helpful';
@@ -37,6 +38,21 @@ export function createLocalReplyGenerator() {
         model: null,
         confidence: 0,
         requiresHuman: true
+      };
+    }
+  };
+}
+
+export function createAcknowledgementReplyGenerator() {
+  return {
+    getStatus: () => ({ configured: true, provider: 'local_acknowledgement', model: null }),
+    async generate() {
+      return {
+        body: acknowledgementBody,
+        provider: 'local_acknowledgement',
+        model: null,
+        confidence: 1,
+        requiresHuman: false
       };
     }
   };
@@ -136,7 +152,26 @@ export function createOpenAIReplyGenerator({
 }
 
 export function createReplyGenerator(options = {}) {
-  return options.apiKey
-    ? createOpenAIReplyGenerator(options)
-    : createLocalReplyGenerator();
+  if (!options.acknowledgementFallbackEnabled) {
+    return options.apiKey
+      ? createOpenAIReplyGenerator(options)
+      : createLocalReplyGenerator();
+  }
+
+  const acknowledgement = createAcknowledgementReplyGenerator();
+  if (!options.apiKey) return acknowledgement;
+
+  const primary = createOpenAIReplyGenerator(options);
+  return {
+    getStatus() {
+      return { ...primary.getStatus(), fallback: 'local_acknowledgement' };
+    },
+    async generate(request) {
+      try {
+        return await primary.generate(request);
+      } catch {
+        return acknowledgement.generate(request);
+      }
+    }
+  };
 }
